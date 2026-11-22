@@ -27,7 +27,7 @@ class Contracts(unittest.TestCase):
             self.assertEqual(g['3']['class_type'],'ClipProjApply')
             self.assertEqual(g['2']['inputs']['type'],'krea2')
             self.assertNotIn('LoraLoaderModelOnly',[v['class_type'] for v in g.values()])
-            self.assertEqual(g['13']['class_type'],'VAEDecodeTiled')
+            self.assertEqual(g['13']['class_type'],'MiniMaxH3VAEDecodeFast')
             self.assertEqual(g['7']['inputs']['length'],p['num_frames'])
             self.assertNotIn('first_frame',g['7']['inputs'])
             self.assertEqual(g['16']['inputs']['format.codec'],'h264')
@@ -69,6 +69,27 @@ class Contracts(unittest.TestCase):
         for node in g.values():
             for value in node['inputs'].values():
                 if isinstance(value,list):self.assertIn(value[0],g)
+
+    def test_acceleration_chain_and_opt_out(self):
+        p=runtime.validate({'prompt':'A toy ball.', 'upscale':True})
+        g=runtime.graph(p)
+        self.assertEqual(g['17']['inputs']['model'],['23',0])
+        self.assertEqual(g['8']['inputs']['model'],['24',0])
+        self.assertEqual(g['20']['inputs']['model'],['25',0])
+        self.assertEqual(g['24']['inputs']['model'],['17',0])
+        self.assertEqual(g['25']['inputs']['model'],['17',0])
+        self.assertEqual(g['23']['inputs']['engine'],'triton')
+        self.assertTrue(g['23']['inputs']['protect_audio'])
+        self.assertEqual(g['24']['inputs']['blend_weight'],.3)
+        self.assertTrue(g['24']['inputs']['offline_smoothing_replay'])
+        self.assertEqual(g['13']['inputs']['tile_overlap'],128)
+        native=runtime.graph(runtime.validate({'prompt':'x','spectrum':False,'sla':False,'fast_vae':False}))
+        self.assertEqual(native['13']['class_type'],'VAEDecodeTiled')
+        self.assertEqual(native['8']['inputs']['model'],['17',0])
+        self.assertEqual(native['17']['inputs']['model'],['1',0])
+        self.assertNotIn('24',native)
+        for flag in ('spectrum','sla','fast_vae'):
+            with self.assertRaises(ValueError):runtime.validate({'prompt':'x',flag:'true'})
 
     def test_upscale_geometry_limits(self):
         p=runtime.validate({'prompt':'x','upscale':True,'width':640,'height':384})
@@ -119,7 +140,7 @@ class Contracts(unittest.TestCase):
             with patch.object(runtime,'COMFY_DIR',root),patch.object(runtime,'ready'),patch.object(runtime,'call',side_effect=call),patch.object(runtime,'process',SimpleNamespace(poll=lambda:None)):
                 result=runtime.generate(p)
             self.assertEqual(base64.b64decode(result['video_base64']),data)
-            self.assertEqual(result['steps'],4);self.assertTrue(result['audio']);self.assertFalse(result['spectrum'])
+            self.assertEqual(result['steps'],4);self.assertTrue(result['audio']);self.assertTrue(result['spectrum'])
             self.assertTrue(result['upscale']);self.assertEqual(result['pass2_steps'],4)
             self.assertEqual((result['width'],result['height']),(1024,1024))
             self.assertEqual((result['base_width'],result['base_height']),(512,512))
