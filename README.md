@@ -13,7 +13,7 @@
 - 映像VAEはINT8 ConvRot、音声VAEはFP32。
 - 映像の出力はVAEDecodeTiled、音声付きMP4（H.264）。
 - 任意で2段階高解像度化：学習済みH3潜在2×アップスケーラー + 4ステップ再描画（denoise 0.35）。
-- Spectrum・SLA・追加LoRAは入れていません。
+- v3でSpectrum・SLA・H3専用Fast VAE Decodeを追加。追加LoRAはありません。
 
 これは専用Turbo4 LoRAへの交換ではありません。Turbo8を内蔵したモデルを4ステップで実行する構成です。
 内蔵Turbo/Mysticの強度は変更できません。Turbo LoRAを二重に読み込まないようにしています。
@@ -39,11 +39,11 @@ Hugging Faceのlocal_dirへ1組だけ保存し、ComfyUIへはコピーせずシ
 
 ## 検証状況
 
-- CPUテスト11件成功：入力検証、フレーム刻み、4ステップ固定、2段階配線・条件更新・音声維持、出力解像度、画像の黒余白、動画返却・後片付け、容量不足時の取得停止、秘密情報のマスク。
+- CPUテスト12件成功：入力検証、フレーム刻み、4ステップ固定、2段階配線・条件更新・音声維持、出力解像度、画像の黒余白、動画返却・後片付け、容量不足時の取得停止、秘密情報のマスク。
 - 作者の固定コミットのCombinedノード入力スキーマと今回の配線を照合済み。
 - v1の512×512・短いT2VはユーザーのRunPodでCompletedを確認（初回実行4分6秒）。
-- v2のDockerビルドと2段階のGPU生成・画質・音質・速度・ピークメモリは未確認です。
-- 記事の800×800・8秒・3分37秒の再現は確認していません。本構成はSpectrumを外しているため同じ速度とは限りません。
+- v2の512→1024・短い2段階生成はユーザーのRunPodでCompletedを確認（実行7分43秒）。v3高速化のDockerビルドとGPU生成・速度・画質・ピークメモリは未確認です。
+- 記事の800×800・8秒・3分37秒の再現は確認していません。設定・GPU・尺・キャッシュ状態が異なり、同じ速度とは限りません。
 
 ## RunPodへの初回デプロイ
 
@@ -110,6 +110,35 @@ Combinedが再ノイズ化するため、2段階目のSamplerにはDisableNoise�
 既存EndpointのManage → Edit endpoint → Repository configuration → Branchを`upscale-v0.2`へ変更し、
 Save Endpoint。BuildsがCompletedになり、Releasesがこの構成を指すことを確認してから送信します。
 worker_versionは`h3-fused-turbo4-v2-upscale`です。GPU・ディスク・タイムアウト設定は既存のまま使えます。
+
+## 高速化（v3 / speed-v0.3）
+
+既存アプリの入力契約を保ち、Endpoint更新後は既定で以下を有効にします。
+
+- Spectrum：blend_weight 0.30、degree 1、warmup 1、最終actual 1、bootstrap有効。音声への直接混合は0、音声保護を目的とするoffline_smoothing_replayは記事と同じく有効。
+- 各生成段階に独立したSpectrumモデルを用い、1段階目と2段階目で履歴を共有しません。
+- SLA：Tritonエンジン、sparsity 0.85、block64、音声保護、参照保護Light、最初のステップはdense。追加の実験的INT8 QK/PVはオフ。
+- H3専用Fast VAE Decode：タイル512px・重なり128px、出力CPU。従来の小タイルに比べタイル数を減らします。VRAM使用量は増えるためGPU検証が必要です。
+- 追加のモデルファイルはありません。既存の6ファイルを使います。
+
+Spectrumは近似であり、特にTurboの少ないステップでは構図・動き・細部が変わることがあります。
+SLAは8192トークン未満や保護対象でdense処理になります。カーネル非対応時にも作者実装はdenseへフォールバックします。
+ノードが存在するだけでは高速化が実際に効いた証拠にはなりません。
+ContainerログのSpectrum actual/forecast数、SLA sparse/dense数・fallback警告と所要時間を確認してください。
+結果のaccelerationは**要求設定**であり、実効の保証ではありません（runtime_effect_verified=false）。
+
+比較・切り分けはRunPod Requestsのinputへ `spectrum:false`、`sla:false`、`fast_vae:false` を指定できます。
+省略時はすべてtrue。upscaleは従来どおり任意です。1段階/2段階、画像あり/なしに適用します。
+worker_total_secondsはモデル準備を含むワーカー処理時間、workflow_secondsはモデル準備後の生成・デコード・保存・応答準備時間です。
+
+更新：Manage → Edit endpoint → Repository configuration → Branchを **speed-v0.3** に変更して保存。
+Builds Completed・Releasesで反映を確認してから使用します。worker_versionは `h3-fused-turbo4-v3-speed`。
+アプリ自体の更新やAPIキーの再登録は不要です。
+
+CPU契約テスト12件と固定ソースのノード入力・VAEインターフェース照合を実施。
+Dockerビルド・GPU実生成、SpectrumとSLA併用の実効・品質・短縮率はまだ未検証です。
+モデル取得・GPUオフロードの時間をこれらのノードが解消するわけではありません。
+まず同条件の短い動画で比較し、実効が確認できてから長い生成へ進めてください。
 
 ## 更新
 
