@@ -12,8 +12,8 @@
 - Qwen3-VL-4B FP8 + ClipProj v3 MLPでテキストエンコーダーを軽量化。
 - 映像VAEはINT8 ConvRot、音声VAEはFP32。
 - 映像の出力はVAEDecodeTiled、音声付きMP4（H.264）。
-- Spectrum・SLA・2段階アップスケール・追加LoRAはこの初期試験版には入れていません。
-  本体と4ステップ生成を先に確認してから、速度や画質を個別に比較します。
+- 任意で2段階高解像度化：学習済みH3潜在2×アップスケーラー + 4ステップ再描画（denoise 0.35）。
+- Spectrum・SLA・追加LoRAは入れていません。
 
 これは専用Turbo4 LoRAへの交換ではありません。Turbo8を内蔵したモデルを4ステップで実行する構成です。
 内蔵Turbo/Mysticの強度は変更できません。Turbo LoRAを二重に読み込まないようにしています。
@@ -27,8 +27,9 @@
 | ClipProj v3 MLP | 0.50GB |
 | 映像VAE INT8 | 2.81GB |
 | 音声VAE FP32 | 0.61GB |
+| H3 learned latent upscaler | 0.059GB |
 
-合計30,142,401,304 bytes（約30.1GB）。サイズと必要なVRAM量は別です。
+合計30,201,424,152 bytes（約30.2GB）。サイズと必要なVRAM量は別です。
 models.jsonに配布元・固定コミット・サイズ・SHA256を記録しています。
 
 ビルド中にモデルを取得しません。初回取得前に必要容量＋3GiBを確認します。
@@ -38,8 +39,10 @@ Hugging Faceのlocal_dirへ1組だけ保存し、ComfyUIへはコピーせずシ
 
 ## 検証状況
 
-- CPUテスト9件成功：入力検証、フレーム刻み、4ステップ固定、ワークフロー配線、画像の黒余白、動画返却・後片付け、容量不足時の取得停止、秘密情報のマスク。
-- GPUモデルのロード、実際の動画生成・音質・画質・速度・ピークメモリ、Dockerビルドは未確認です。
+- CPUテスト11件成功：入力検証、フレーム刻み、4ステップ固定、2段階配線・条件更新・音声維持、出力解像度、画像の黒余白、動画返却・後片付け、容量不足時の取得停止、秘密情報のマスク。
+- 作者の固定コミットのCombinedノード入力スキーマと今回の配線を照合済み。
+- v1の512×512・短いT2VはユーザーのRunPodでCompletedを確認（初回実行4分6秒）。
+- v2のDockerビルドと2段階のGPU生成・画質・音質・速度・ピークメモリは未確認です。
 - 記事の800×800・8秒・3分37秒の再現は確認していません。本構成はSpectrumを外しているため同じ速度とは限りません。
 
 ## RunPodへの初回デプロイ
@@ -63,9 +66,9 @@ ok=trueは設定を読めたという意味で、GPU動画生成の成功確認�
 
 ### 最初の短い生成テスト
 
-smoke-request.jsonをRunPodのRequestsへ入力し、1回だけ送信します。
+smoke-request.jsonをRunPodのRequestsへ入力し、1回だけ送信します（v2ではupscale=true）。
 512×512、要求2秒（17k+5のフレーム刻みに切り上げるため実際は56フレーム、約2.33秒）、seed42。
-初回はモデル約30.1GBの取得・SHA256確認・ロードが入ります。失敗しても自動再送しません。
+初回はモデル約30.2GBの取得・SHA256確認・ロードが入ります。失敗しても自動再送しません。
 エラー時はdetail、phase、engine_log_tailに原因を返します。
 
 ### 画像から動画にする場合
@@ -73,14 +76,40 @@ smoke-request.jsonをRunPodのRequestsへ入力し、1回だけ送信します�
 同じinputへimage_base64（PNG/JPEG/WebP、最大4,000,000文字、2000万画素まで）を追加します。
 EXIF回転を反映し、出力サイズへ縦横比を保って収め、余白を黒で補います。
 image_base64を省略するとT2Vです。入力した場合は必ず画像を使い、無視しません。
-最終フレーム指定・参照画像モード・アップスケールは初期版の対象外です。
+最終フレーム指定・参照画像モードは対象外です。
 既存H3アプリはworker_versionと追加LoRA入力の契約が異なるため、まだそのまま接続しないでください。
 基本生成を確認後にアプリ接続を調整します。
 
-入力：prompt、width、height、duration_seconds、seed、image_base64（任意）、diagnose。
+入力：prompt、width、height、duration_seconds、seed、image_base64（任意）、upscale（任意、既定false）、diagnose。
 各辺384〜1344px・32px刻み、総画素数最大1344×768、要求長さ1〜15秒。
 15秒や最大解像度での生成可能性は未確認です。まず512×512の短い生成から確認します。
 動画は6MiBを上限としてbase64返却。超える場合は短くするか解像度を下げてください。
+
+## 2段階高解像度化（v2）
+
+`upscale: true`で有効になります。width/heightは**1段階目のサイズ**です。
+1段階目は従来どおり4ステップ。完全にノイズを除いた`denoised_output`を学習済みモデルで縦横2倍にし、
+H3の画像・キーフレーム条件も拡大し、denoise 0.35・4ステップで再描画します。
+Combinedが再ノイズ化するため、2段階目のSamplerにはDisableNoiseを使います。
+音声は再ノイズ化・再生成せず、1段階目からデコードします。フレーム数・fpsは同じです。
+
+```json
+{"input":{"prompt":"A small red toy ball rolls slowly across a wooden table in a quiet sunlit room. Soft room ambience, no dialogue, no music.","width":512,"height":512,"duration_seconds":2,"seed":42,"upscale":true}}
+```
+
+- 上記は512×512 → 1024×1024。384×384 → 768×768、480×480 → 960×960も指定できます。
+- 作者の学習モデルは2倍固定です。512→800の任意倍率はこの版では行いません。
+- 比率・尺は維持します。I2Vの入力画像は1段階目のサイズへ比率を保ち黒余白で収めます。
+- 試験上限：ベースは32px刻み・各辺384〜768、面積512×512以下（出力面積1024×1024以下）。
+- 結果width/heightは最終サイズ、base_width/base_heightは1段階目。upscale、pass2_steps、pass2_denoiseも返します。
+- `upscale: false`または省略で従来の1段階生成。追加モデル約59MBも起動準備時に取得・検証します。
+- 2段階目は高解像度で再描画するためVRAMと時間が増えます。15秒が必ず通る方式ではありません。
+  まず512×512・2秒で確認し、長さを伸ばしてください。出力6MiB上限も引き続き適用します。
+- 2段階目失敗時はエラーを返します。低解像度動画へ黙って置き換えたり、自動再送したりしません。
+
+既存EndpointのManage → Edit endpoint → Repository configuration → Branchを`upscale-v0.2`へ変更し、
+Save Endpoint。BuildsがCompletedになり、Releasesがこの構成を指すことを確認してから送信します。
+worker_versionは`h3-fused-turbo4-v2-upscale`です。GPU・ディスク・タイムアウト設定は既存のまま使えます。
 
 ## 更新
 
@@ -104,5 +133,8 @@ python -m py_compile runtime.py handler.py
 - 投影モデル：https://huggingface.co/NicoLab28/ClipProj-MiniMax-H3
 - VAEs：https://huggingface.co/Comfy-Org/MiniMax-H3
 - Encoder：https://huggingface.co/Comfy-Org/Qwen3-VL
+- 記事のCombinedノード：https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler
+- アップスケーラー構造：https://github.com/mamad8c/ComfyUI-H3-Latent-Upscaler-Mamad8
+- 追加モデル：https://huggingface.co/Tridae/H3LatentUpscaler
 
 モデルの利用条件は各配布元を確認してください。モデルをGitHubへ保存したり再配布したりする構成ではありません。
