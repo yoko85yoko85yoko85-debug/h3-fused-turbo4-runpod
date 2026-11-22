@@ -110,7 +110,10 @@ class Contracts(unittest.TestCase):
         self.assertTrue(g['24']['inputs']['offline_smoothing_replay'])
         self.assertEqual(g['13']['inputs']['tile_overlap'],128)
         default=runtime.graph(runtime.validate({'prompt':'x','upscale':True}))
-        self.assertNotIn('23',default)
+        self.assertIn('23',default)
+        self.assertEqual(default['17']['inputs']['model'],['23',0])
+        self.assertEqual(default['8']['inputs']['model'],['17',0])
+        self.assertEqual(default['20']['inputs']['model'],['17',0])
         self.assertNotIn('24',default)
         self.assertNotIn('25',default)
         self.assertEqual(default['13']['class_type'],'VAEDecodeTiled')
@@ -122,6 +125,20 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('24',native)
         for flag in ('spectrum','sla','fast_vae'):
             with self.assertRaises(ValueError):runtime.validate({'prompt':'x',flag:'true'})
+
+    def test_sla_only_preserves_keyframe_fix_and_native_decode(self):
+        p=runtime.validate({'prompt':'A toy ball.','upscale':True})
+        self.assertTrue(p['sla'])
+        self.assertFalse(p['spectrum'])
+        self.assertFalse(p['fast_vae'])
+        g=runtime.graph(p,'frame_h3_'+'c'*32+'.png')
+        native=runtime.graph(runtime.validate({'prompt':'A toy ball.','upscale':True,'sla':False}),
+                             'frame_h3_'+'c'*32+'.png')
+        g.pop('23');g['17']['inputs']['model']=['1',0]
+        self.assertEqual(g,native)
+        self.assertEqual(g['20']['inputs']['conditioning'],['26',0])
+        self.assertEqual(g['26']['class_type'],'H3ReencodeFirstFrame')
+        self.assertEqual(g['13']['class_type'],'VAEDecodeTiled')
 
     def test_upscale_geometry_limits(self):
         p=runtime.validate({'prompt':'x','upscale':True,'width':640,'height':384})
