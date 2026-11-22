@@ -8,10 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from PIL import Image
 import handler
 import runtime
+from keyframe_nodes import H3ReencodeFirstFrame
 
 
 class Contracts(unittest.TestCase):
@@ -54,8 +55,11 @@ class Contracts(unittest.TestCase):
         self.assertEqual(g['19']['inputs']['samples'],['12',1])
         self.assertEqual(g['19']['inputs']['audio_denoise'],0)
         self.assertEqual(g['19']['inputs']['method'],'learned model')
-        self.assertEqual(g['19']['inputs']['positive'],['7',0])
-        self.assertEqual(g['20']['inputs']['conditioning'],['19',1])
+        self.assertNotIn('positive',g['19']['inputs'])
+        self.assertEqual(g['20']['inputs']['conditioning'],['26',0])
+        self.assertEqual(g['26']['inputs']['positive'],['7',0])
+        self.assertEqual(g['26']['inputs']['image'],['6',0])
+        self.assertEqual((g['26']['inputs']['width'],g['26']['inputs']['height']),(1024,1024))
         self.assertEqual(g['22']['inputs']['noise'],['21',0])
         self.assertEqual(g['21']['class_type'],'DisableNoise')
         self.assertEqual(g['22']['inputs']['sigmas'],g['19']['inputs']['sigmas'])
@@ -66,9 +70,31 @@ class Contracts(unittest.TestCase):
         self.assertEqual(g['7']['inputs']['length'],p['num_frames'])
         self.assertEqual(g['7']['inputs']['first_frame'],['6',0])
         self.assertNotIn('22',runtime.graph(runtime.validate({'prompt':'x','upscale':False})))
+        self.assertNotIn('26',runtime.graph(p))
         for node in g.values():
             for value in node['inputs'].values():
                 if isinstance(value,list):self.assertIn(value[0],g)
+
+    def test_reencode_anchor_preserves_original_conditioning(self):
+        embedding=object();original_latent=object();encoded=object()
+        anchor={'resolved_frame_index':0,'latent':original_latent}
+        positive=[[embedding,{'minimax_keyframes':[anchor],'other':'preserve'}]]
+        image=MagicMock();pixels=object();resized=MagicMock()
+        resized.movedim.return_value=pixels
+        resize=MagicMock(return_value=resized);vae=MagicMock();vae.encode.return_value=encoded
+        fake=SimpleNamespace(utils=SimpleNamespace(common_upscale=resize))
+        with patch.dict(sys.modules,{'comfy':fake,'comfy.utils':fake.utils}):
+            result=H3ReencodeFirstFrame().reencode(positive,vae,image,768,768)[0]
+        self.assertIs(result[0][0],embedding)
+        self.assertIs(result[0][1]['minimax_keyframes'][0]['latent'],encoded)
+        self.assertIs(anchor['latent'],original_latent)
+        self.assertIsNot(result[0][1],positive[0][1])
+        self.assertIsNot(result[0][1]['minimax_keyframes'][0],anchor)
+        self.assertEqual(result[0][1]['other'],'preserve')
+        vae.encode.assert_called_once_with(pixels)
+        self.assertEqual(resize.call_args.args[1:],(768,768,'lanczos','disabled'))
+        for w,h,c in [(767,768,positive),(768,768,[[embedding,{}]])]:
+            with self.assertRaises(ValueError):H3ReencodeFirstFrame().reencode(c,vae,image,w,h)
 
     def test_acceleration_chain_and_opt_out(self):
         p=runtime.validate({'prompt':'A toy ball.', 'upscale':True, 'spectrum':True, 'sla':True, 'fast_vae':True})
