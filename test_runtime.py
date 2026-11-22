@@ -47,12 +47,41 @@ class Contracts(unittest.TestCase):
         self.assertEqual(g['6']['class_type'],'LoadImage')
         with self.assertRaises(ValueError):runtime.graph(p,'../escape.png')
 
+    def test_two_pass_latent_audio_and_conditioning(self):
+        p=runtime.validate({'prompt':'A toy ball rolls.', 'upscale':True})
+        self.assertEqual((p['output_width'],p['output_height']),(1024,1024))
+        g=runtime.graph(p,'frame_h3_'+'b'*32+'.png')
+        self.assertEqual(g['19']['inputs']['samples'],['12',1])
+        self.assertEqual(g['19']['inputs']['audio_denoise'],0)
+        self.assertEqual(g['19']['inputs']['method'],'learned model')
+        self.assertEqual(g['19']['inputs']['positive'],['7',0])
+        self.assertEqual(g['20']['inputs']['conditioning'],['19',1])
+        self.assertEqual(g['22']['inputs']['noise'],['21',0])
+        self.assertEqual(g['21']['class_type'],'DisableNoise')
+        self.assertEqual(g['22']['inputs']['sigmas'],g['19']['inputs']['sigmas'])
+        self.assertEqual(g['18']['inputs']['denoise'],0.35)
+        self.assertEqual(g['18']['inputs']['steps'],4)
+        self.assertEqual(g['13']['inputs']['samples'],['22',0])
+        self.assertEqual(g['14']['inputs']['samples'],['12',1])
+        self.assertEqual(g['7']['inputs']['length'],p['num_frames'])
+        self.assertEqual(g['7']['inputs']['first_frame'],['6',0])
+        self.assertNotIn('22',runtime.graph(runtime.validate({'prompt':'x','upscale':False})))
+        for node in g.values():
+            for value in node['inputs'].values():
+                if isinstance(value,list):self.assertIn(value[0],g)
+
+    def test_upscale_geometry_limits(self):
+        p=runtime.validate({'prompt':'x','upscale':True,'width':640,'height':384})
+        self.assertEqual((p['output_width'],p['output_height']),(1280,768))
+        for values in ({'upscale':'true'},{'upscale':1},{'upscale':True,'width':768,'height':512}):
+            with self.assertRaises(ValueError):runtime.validate({'prompt':'x',**values})
+
     def test_reject_invalid_without_gpu(self):
         with patch.object(runtime,'generate') as generate:
             for p in [None,{}, {'prompt':'x','width':641},{'prompt':'x','duration_seconds':16},
                       {'prompt':'x','duration_seconds':float('nan')},{'prompt':'x','seed':True},
                       {'prompt':'x','image_base64':'bad!'},{'prompt':'x','steps':8},
-                      {'prompt':'x','lora':{}},{'prompt':'x','upscale':True}]:
+                      {'prompt':'x','lora':{}},{'prompt':'x','upscale':'yes'}]:
                 self.assertIn('error',handler.handler({'input':p}))
             generate.assert_not_called()
 
@@ -60,8 +89,8 @@ class Contracts(unittest.TestCase):
         with patch.object(runtime,'ensure_models',side_effect=AssertionError),patch.object(runtime,'ready',side_effect=AssertionError):
             result=handler.handler({'input':{'diagnose':True}})
         self.assertTrue(result['ok']);self.assertFalse(result['downloads_started_by_diagnostic'])
-        self.assertEqual(result['planned_model_bytes'],30142401304)
-        self.assertEqual(len(runtime.load_manifest()['models']),5)
+        self.assertEqual(result['planned_model_bytes'],30201424152)
+        self.assertEqual(len(runtime.load_manifest()['models']),6)
         for m in runtime.load_manifest()['models']:
             self.assertEqual(len(m['revision']),40);self.assertEqual(len(m['sha256']),64)
 
@@ -70,7 +99,7 @@ class Contracts(unittest.TestCase):
             self.assertEqual(runtime.call('/history',{'delete':['id']}),{})
 
     def test_video_result_cleanup(self):
-        p=runtime.validate({'prompt':'A toy ball rolls.'})
+        p=runtime.validate({'prompt':'A toy ball rolls.','upscale':True})
         # Mocked output bytes exercise transport/cleanup only, not codec validity.
         data=b'\x00\x00\x00\x18ftypmp42'
         self.assertEqual(data[4:8],b'ftyp')
@@ -91,6 +120,9 @@ class Contracts(unittest.TestCase):
                 result=runtime.generate(p)
             self.assertEqual(base64.b64decode(result['video_base64']),data)
             self.assertEqual(result['steps'],4);self.assertTrue(result['audio']);self.assertFalse(result['spectrum'])
+            self.assertTrue(result['upscale']);self.assertEqual(result['pass2_steps'],4)
+            self.assertEqual((result['width'],result['height']),(1024,1024))
+            self.assertEqual((result['base_width'],result['base_height']),(512,512))
             self.assertFalse(captured['file'].exists());self.assertFalse(captured['file'].parent.exists())
 
     def test_private_source_removed_on_error(self):
