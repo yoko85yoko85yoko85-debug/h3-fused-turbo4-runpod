@@ -1,5 +1,25 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v7：記事の保存ワークフローを基準にした比較版
+
+**配布JSONの2段階目は保存時点でbypassでした。** 記事の800×800・8秒・3分37秒を、こちらの2段階生成とそのまま比較したのは不適切でした。
+記事の速度測定時に2段階目が有効だったかは不明です。詳しい差分と限界はWORKFLOW-AUDIT.md参照。
+
+Branch=`article-v0.7`、worker_version=`h3-fused-turbo4-v7-article`。
+SLAオフ、Spectrumオン（保存JSONの全widget値を一致）、標準VAEDecode。
+モデル配線もUNET→Spectrum→SigmaShiftへ合わせます。
+ClipProjDeviceLoader cuda:0/dynamicと投影v3.1を使用。
+映像VAEも記事のリンク先Kijai版へ変更（同名でも従来のComfy-Org版とはサイズ・SHA256が違いました）。投影モデルのサイズ・SHA256・revisionも更新済み。
+SpectrumパッケージとComfyUI本体の実行版まで記事と一致したわけではありません。完全再現や同じ速度を保証しません。
+
+既存アプリでは**2段階高解像度化をオフ**、正方形・0.6MP（800×800）・8秒が記事の記載条件に対応します。
+新しいデプロイを生成済みと誤認しないよう、Builds/Releaseとworker_versionを確認してください。
+比較にはworker_total_secondsだけでなくworkflow_secondsを使います。モデルダウンロード時間を生成速度と混ぜないでください。
+追加の有料生成はこちらからは実行していません。
+
+CPUテスト14件と配布JSONのSpectrum全設定・Encoder loader/projection・有効なdecoderの一致を確認しました。
+GPU実行・画質・速度は未検証です。任意の2段階I2Vには冒頭画像条件の再エンコード修正を維持しています。
+
 ## v6：SLA単独比較版
 
 ブランチ `sla-v0.6`、worker_version=`h3-fused-turbo4-v6-sla`。
@@ -77,11 +97,11 @@ worker_version=`h3-fused-turbo4-v4-quality`。モデル準備込みworker_total_
 | Fused INT8 ConvRot本体 | 20.98GB |
 | Qwen3-VL-4B FP8 | 5.24GB |
 | ClipProj v3 MLP | 0.50GB |
-| 映像VAE INT8 | 2.81GB |
+| 映像VAE INT8（v7 Kijai版） | 3.17GB |
 | 音声VAE FP32 | 0.61GB |
 | H3 learned latent upscaler | 0.059GB |
 
-合計30,201,424,152 bytes（約30.2GB）。サイズと必要なVRAM量は別です。
+v7合計30,562,019,312 bytes（約30.56GB）。サイズと必要なVRAM量は別です。
 models.jsonに配布元・固定コミット・サイズ・SHA256を記録しています。
 
 ビルド中にモデルを取得しません。初回取得前に必要容量＋3GiBを確認します。
@@ -120,7 +140,7 @@ ok=trueは設定を読めたという意味で、GPU動画生成の成功確認�
 
 smoke-request.jsonをRunPodのRequestsへ入力し、1回だけ送信します（v2ではupscale=true）。
 512×512、要求2秒（17k+5のフレーム刻みに切り上げるため実際は56フレーム、約2.33秒）、seed42。
-初回はモデル約30.2GBの取得・SHA256確認・ロードが入ります。失敗しても自動再送しません。
+v7初回はモデル約30.56GBの取得・SHA256確認・ロードが入ります。失敗しても自動再送しません。
 エラー時はdetail、phase、engine_log_tailに原因を返します。
 
 ### 画像から動画にする場合
