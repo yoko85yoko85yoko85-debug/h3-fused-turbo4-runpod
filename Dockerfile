@@ -10,6 +10,12 @@ RUN git init ComfyUI && cd ComfyUI && git remote add origin https://github.com/C
 RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-ClipProj && cd /opt/ComfyUI/custom_nodes/ComfyUI-ClipProj && git remote add origin https://github.com/nicolab28/ComfyUI-ClipProj.git && git fetch --depth 1 origin ${CLIPPROJ_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
 RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-MiniMaxH3_LatentUpscaler && cd /opt/ComfyUI/custom_nodes/ComfyUI-MiniMaxH3_LatentUpscaler && git remote add origin https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler.git && git fetch --depth 1 origin ${UPSCALER_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
 RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-H3-Latent-Upscaler-Mamad8 && cd /opt/ComfyUI/custom_nodes/ComfyUI-H3-Latent-Upscaler-Mamad8 && git remote add origin https://github.com/mamad8c/ComfyUI-H3-Latent-Upscaler-Mamad8.git && git fetch --depth 1 origin ${UPSCALER_ARCH_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
+ARG SPECTRUM_REV=7df883bb2361b7884ad789e97effd1dc37c8963a
+ARG SLA_REV=cc944b5064d1b15fc77664c7138d9752bba66302
+RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-Spectrum-MiniMax-H3 && cd /opt/ComfyUI/custom_nodes/ComfyUI-Spectrum-MiniMax-H3 && git remote add origin https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3.git && git fetch --depth 1 origin ${SPECTRUM_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
+# Install only the H3 SLA subpackage, not unrelated nodes from the parent repository.
+RUN git init /tmp/plaguekind && cd /tmp/plaguekind && git remote add origin https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes.git && git fetch --depth 1 origin ${SLA_REV} && git checkout --detach FETCH_HEAD && cp -a ComfyUI-H3-SLA-Attention /opt/ComfyUI/custom_nodes/ComfyUI-H3-SLA-Attention && rm -rf /tmp/plaguekind
+RUN python -c "import triton; print('Triton available')"
 RUN python -c "import torch; print('torch=='+torch.__version__.split('+')[0])" > /tmp/torch-constraint.txt && pip install -c /tmp/torch-constraint.txt -r /opt/ComfyUI/requirements.txt runpod==1.7.9 'huggingface-hub>=0.36,<2'
 WORKDIR /app
 COPY handler.py runtime.py models.json workflow_api.json ./
