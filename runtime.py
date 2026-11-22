@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v1'
+VERSION = 'h3-fused-turbo4-v2-upscale'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -65,9 +65,9 @@ def load_manifest():
 def validate(p):
     if not isinstance(p, dict):
         raise ValueError('input must be an object')
-    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose'}
+    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose', 'upscale'}
     if set(p) - allowed:
-        raise ValueError('Unsupported input field; no extra LoRA or upscaler in this test worker')
+        raise ValueError('Unsupported input field; extra LoRA is not supported')
     if p.get('diagnose') is True:
         return {'diagnose': True}
     prompt = p.get('prompt', '')
@@ -82,6 +82,13 @@ def validate(p):
         out[key] = value
     if out['width'] % 32 or out['height'] % 32 or out['width'] * out['height'] > 1344 * 768:
         raise ValueError('Dimensions must be multiples of 32 and area <= 1344x768')
+    upscale = p.get('upscale', False)
+    if type(upscale) is not bool:
+        raise ValueError('upscale must be true or false')
+    if upscale and (max(out['width'], out['height']) > 768 or out['width'] * out['height'] > 512 * 512):
+        raise ValueError('For 2x upscale, base area must be <= 512x512 and each edge <= 768')
+    out.update(upscale=upscale, output_width=out['width'] * (2 if upscale else 1),
+               output_height=out['height'] * (2 if upscale else 1))
     seconds = p.get('duration_seconds', 2)
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 1 <= seconds <= 15:
         raise ValueError('duration_seconds must be between 1 and 15')
@@ -119,6 +126,28 @@ def graph(p, source_filename=None):
     g = copy.deepcopy(json.loads((HERE / 'workflow_api.json').read_text()))
     g['7']['inputs'].update(prompt=p['prompt'], width=p['width'], height=p['height'], length=p['num_frames'])
     g['9']['inputs']['noise_seed'] = p['seed']
+    if p.get('upscale'):
+        # Combined adds CONST noise itself and resizes image/keyframe conditioning.
+        # Passing ordinary RandomNoise into sampler 2 would add noise twice.
+        g.update({
+            '18': {'class_type': 'BasicScheduler', 'inputs': {
+                'model': ['17', 0], 'scheduler': 'simple', 'steps': 4, 'denoise': 0.35}},
+            '19': {'class_type': 'MiniMaxH3LatentUpscaleCombined', 'inputs': {
+                'samples': ['12', 1], 'method': 'learned model',
+                'learned_model': 'h3_clean_latent_upscaler_film_epoch200.safetensors',
+                'model': ['17', 0], 'noise': ['9', 0], 'sigmas': ['18', 0],
+                'audio_denoise': 0.0, 'noise_resample': 'independent', 'match_stats': 0.0,
+                'positive': ['7', 0]}},
+            '20': {'class_type': 'BasicGuider', 'inputs': {
+                'model': ['17', 0], 'conditioning': ['19', 1]}},
+            '21': {'class_type': 'DisableNoise', 'inputs': {}},
+            '22': {'class_type': 'SamplerCustomAdvanced', 'inputs': {
+                'noise': ['21', 0], 'guider': ['20', 0], 'sampler': ['10', 0],
+                'sigmas': ['18', 0], 'latent_image': ['19', 0]}}
+        })
+        g['13']['inputs']['samples'] = ['22', 0]
+        # Decode the original audio explicitly, even though Combined also locks it.
+        g['14']['inputs']['samples'] = ['12', 1]
     if source_filename:
         if not re.fullmatch(r'frame_h3_[a-f0-9]{32}\.png', source_filename):
             raise ValueError('Invalid internal image name')
@@ -206,7 +235,7 @@ def ready():
                 raise RuntimeError('ComfyUI failed to start; see container logs')
             try:
                 info = call('/object_info')
-                missing = {node['class_type'] for node in graph(validate({'prompt': 'test'})).values()} | {'LoadImage'}
+                missing = {node['class_type'] for node in graph(validate({'prompt': 'test', 'upscale': True})).values()} | {'LoadImage'}
                 missing -= set(info)
                 if missing:
                     raise RuntimeError('Required nodes missing: ' + ', '.join(sorted(missing)))
@@ -284,8 +313,12 @@ def execute(p, source_filename=None):
                     phase = 'ready'
                     return {'video_base64': encoded, 'mime_type': 'video/mp4', 'mode': 'h3_fused_i2v' if source_filename else 'h3_fused_t2v',
                             'worker_version': VERSION, 'model': 'MATLOWAI/minimax-h3-fused-turbo-int8-convrot',
-                            'steps': 4, 'fps': 24, 'turbo': True, 'audio': True, 'spectrum': False, 'upscale': False,
-                            **{key: p[key] for key in ('width', 'height', 'seed', 'num_frames', 'duration_seconds')}}
+                            'steps': 4, 'pass2_steps': 4 if p['upscale'] else 0,
+                            'pass2_denoise': 0.35 if p['upscale'] else None,
+                            'fps': 24, 'turbo': True, 'audio': True, 'spectrum': False, 'upscale': p['upscale'],
+                            'base_width': p['width'], 'base_height': p['height'],
+                            'width': p['output_width'], 'height': p['output_height'],
+                            **{key: p[key] for key in ('seed', 'num_frames', 'duration_seconds')}}
             time.sleep(1)
         raise TimeoutError('Generation timed out')
     except Exception:
@@ -313,8 +346,10 @@ def diagnose():
 if __name__ == '__main__':
     # Build-time smoke check: no torch, GPU, network or model download.
     assert '--check' in sys.argv
-    assert len(load_manifest()['models']) == 5
+    assert len(load_manifest()['models']) == 6
     g = graph(validate({'prompt': 'A ceramic mug on a wooden table.'}))
     assert g['11']['inputs']['steps'] == 4
     assert g['8']['class_type'] == 'BasicGuider'
+    up = graph(validate({'prompt': 'A toy ball.', 'upscale': True}))
+    assert up['13']['inputs']['samples'] == ['22', 0]
     print('BUILD_SMOKE_OK: configuration and workflow; no weights downloaded')
