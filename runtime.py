@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v7-article'
+VERSION = 'h3-fused-turbo4-v8-cu130-sage'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -29,6 +29,8 @@ process = None
 startup_error = None
 phase = 'registered'
 engine_log = deque(maxlen=100)
+runtime_environment = None
+COMFY_FLAGS = ['--use-sage-attention', '--disable-pinned-memory', '--disable-comfy-compiler']
 
 
 def safe_text(value):
@@ -166,7 +168,7 @@ def graph(p, source_filename=None):
         settings = {'model': ['23', 0] if p['sla'] else ['1', 0], 'enabled': True, 'blend_weight': 0.30,
                     'degree': 1, 'ridge_lambda': 0.1, 'window_size': 2.0,
                     'flex_window': 0.75, 'warmup_steps': 1, 'tail_actual_steps': 1,
-                    'max_history': 8, 'debug': False, 'history_storage': 'system_ram',
+                    'max_history': 8, 'debug': True, 'history_storage': 'system_ram',
                     'bootstrap_first_forecast': True, 'offline_smoothing_replay': True,
                     'anchor_residual_feedback': False, 'selective_rollback_correction': False,
                     'audio_blend_weight': 0.0, 'offline_archive_storage': 'system_ram',
@@ -255,8 +257,24 @@ def call(path, payload=None, timeout=15):
         return json.loads(raw) if raw.strip() else {}
 
 
+def verify_runtime():
+    import torch
+    cuda = torch.version.cuda or '0'
+    if int(cuda.split('.')[0]) < 13:
+        raise RuntimeError('This worker requires the CUDA 13+ PyTorch build; check the deployed image')
+    if not torch.cuda.is_available():
+        raise RuntimeError('CUDA GPU unavailable; select a CUDA 13 compatible RunPod host/driver')
+    return {'pytorch': torch.__version__, 'cuda_build': cuda,
+            'gpu': torch.cuda.get_device_name(0), 'comfy_flags': COMFY_FLAGS.copy()}
+
+
+def comfy_command():
+    return [sys.executable, str(COMFY_DIR / 'main.py'), '--listen', '127.0.0.1',
+            '--port', '8188', '--disable-auto-launch', '--disable-metadata', *COMFY_FLAGS]
+
+
 def ready():
-    global process, startup_error, phase
+    global process, startup_error, phase, runtime_environment
     if startup_error:
         raise RuntimeError(startup_error)
     if process is not None:
@@ -265,11 +283,13 @@ def ready():
         # A new user request may start a fresh engine; never retry a submitted job.
         process = None
     try:
+        phase = 'runtime_preflight'
+        runtime_environment = verify_runtime()
+        print('[Runtime] ' + json.dumps(runtime_environment), flush=True)
         phase = 'model_download_or_verification'
         ensure_models()
         phase = 'comfy_startup'
-        process = subprocess.Popen([sys.executable, str(COMFY_DIR / 'main.py'), '--listen', '127.0.0.1',
-                    '--port', '8188', '--disable-auto-launch', '--disable-metadata'], cwd=COMFY_DIR,
+        process = subprocess.Popen(comfy_command(), cwd=COMFY_DIR,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1)
         threading.Thread(target=capture_engine, args=(process.stdout,), daemon=True).start()
         deadline = time.monotonic() + 240
@@ -360,6 +380,7 @@ def execute(p, source_filename=None):
                     phase = 'ready'
                     return {'video_base64': encoded, 'mime_type': 'video/mp4', 'mode': 'h3_fused_i2v' if source_filename else 'h3_fused_t2v',
                             'worker_version': VERSION, 'model': 'MATLOWAI/minimax-h3-fused-turbo-int8-convrot',
+                            'runtime_environment': runtime_environment,
                             'steps': 4, 'pass2_steps': 4 if p['upscale'] else 0,
                             'pass2_denoise': 0.35 if p['upscale'] else None,
                             'fps': 24, 'turbo': True, 'audio': True, 'spectrum': p['spectrum'], 'upscale': p['upscale'],
