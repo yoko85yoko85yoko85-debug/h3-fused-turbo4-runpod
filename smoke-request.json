@@ -1,0 +1,9 @@
+{
+  "input": {
+    "prompt": "A small red toy ball rolls slowly across a wooden table in a quiet sunlit room. Soft room ambience, no dialogue, no music.",
+    "width": 512,
+    "height": 512,
+    "duration_seconds": 2,
+    "seed": 42
+  }
+}
