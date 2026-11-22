@@ -21,20 +21,20 @@
     {
       "repo": "NicoLab28/ClipProj-MiniMax-H3",
       "revision": "2ebdbcdc27a29a9607efdb221a9afcb9a0cdd808",
-      "remote_path": "mmh3-4b-ClipProj-v3-mlp.safetensors",
+      "remote_path": "mmh3-4b-ClipProj-v3.1-mlp.safetensors",
       "folder": "clip_projections",
-      "filename": "mmh3-4b-ClipProj-v3-mlp.safetensors",
-      "bytes": 503434368,
-      "sha256": "feef06ef3b9aede3b1f3331b71eebbc873e21a867d73bcf40ea2c0b007270693"
+      "filename": "mmh3-4b-ClipProj-v3.1-mlp.safetensors",
+      "bytes": 503423800,
+      "sha256": "902a9b96ed041aedf7463251c59d917fba94963b944dd3196c00b23ff0f2b6b0"
     },
     {
-      "repo": "Comfy-Org/MiniMax-H3",
-      "revision": "4b53a35191437de05370da548e59aeabe2a5a09a",
-      "remote_path": "vae/minimax_h3_video_vae_int8_convrot.safetensors",
+      "repo": "Kijai/MiniMax-H3-experimental",
+      "revision": "c2e7b89b1800123c49a0f620a1932c01d8952256",
+      "remote_path": "minimax_h3_video_vae_int8_convrot.safetensors",
       "folder": "vae",
       "filename": "minimax_h3_video_vae_int8_convrot.safetensors",
-      "bytes": 2811065184,
-      "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e"
+      "bytes": 3171670912,
+      "sha256": "9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410"
     },
     {
       "repo": "Comfy-Org/MiniMax-H3",
