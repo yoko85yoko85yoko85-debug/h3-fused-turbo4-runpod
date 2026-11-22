@@ -1,5 +1,30 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v8：CUDA実行版とAttention起動設定の修正
+
+Branch=`runtime-v0.8`、worker_version=`h3-fused-turbo4-v8-cu130-sage`。
+v7の実ログに「最適化CUDA演算にはPyTorch cu130以上が必要」とあり、CUDA12.8で専用バックエンドが無効でした。
+さらにColabノートブックを取得して起動コードを照合し、SageAttention・固定メモリ・コンパイラ設定の違いが確認できました。
+この不一致が全速度差の原因かどうかは、修正後の実測が必要です。
+
+- PyTorch2.11.0 / CUDA13.0 / cuDNN9の公開runtimeイメージへ変更。
+- SageAttention1.0.6（Triton版）を追加し、--use-sage-attentionで起動。
+- 配布Colabと同じ--disable-pinned-memoryと--disable-comfy-compilerを追加。
+- --fastの一括指定やfp16_accumulationなどの追加最適化は行わない。
+- Spectrum debug=trueにしてactual/forecastをログ出力。
+- 出力JSONのruntime_environmentにPyTorch/CUDA/GPU/起動フラグを返す。
+- CUDA13未満・CUDA GPU未認識ならモデル取得前にエラーとする。
+- アプリ、モデル、標準VAE、画像の比率維持、任意2段階時の冒頭画像対策は維持。
+
+RunPodのBranchをruntime-v0.8に変更し、AdvancedのAllowed CUDA versionsでCUDA13.0以降に対応したホストへ制限する。
+GPUはL4のまま。CUDA13が選択肢にない場合、適当な古いCUDA版で再生成せず、設定画面を確認する。
+Container disk80GB・Max1・Active0等は維持。
+ビルド中はTorch/SageのimportとCUDAビルド版をGPUなしで検証する。GPUカーネル・VRAM・速度・画質の検証とは別。
+比較は800×800・8秒・1段階・4ステップで、結果はworker_total_secondsとworkflow_secondsで分ける。
+
+CPUテスト15件成功。Dockerビルド・GPU実生成・CUDA13ホスト上のカーネル実行・短縮率は未検証。
+Colabの実際のTorch版とSageAttention版は不明なので、完全一致や3分37秒の再現とは主張しない。
+
 ## v7：記事の保存ワークフローを基準にした比較版
 
 **配布JSONの2段階目は保存時点でbypassでした。** 記事の800×800・8秒・3分37秒を、こちらの2段階生成とそのまま比較したのは不適切でした。
