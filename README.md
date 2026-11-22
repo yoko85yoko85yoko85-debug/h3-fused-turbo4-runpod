@@ -1,5 +1,28 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v9：Ref2VA（参照画像1枚）
+
+Branch=`ref2va-v0.9`、worker_version=`h3-fused-turbo4-v9-ref2va`。
+CUDA13・SageAttention・アプリ用venv等の実行環境はruntime-v0.8.1から維持します。
+追加モデル・追加pip依存はありません。既存FusedモデルのReferenceToVideo条件を使います。
+
+inputへmode="ref2va"とimage_base64を指定。参照画像は必須、参照は1枚です。
+プロンプトの<Picture 1>で参照できます（例：The red toy from <Picture 1> moves gently across a table.）。
+参照画像の縦横比を保ち、最大辺1024pxに縮小するだけで、出力キャンバスへ黒余白で固定しません。
+ComfyUIのMiniMaxH3ReferenceToVideoにref_images.ref_image_0として入力し、ref_image_size=matchを使います。
+この入力名は本体作者の固定版05_ref2va_4step_sla.api.jsonと照合しました。
+
+mode省略またはi2vでは従来のI2V/T2V。Ref2VAは画像がなければGPU生成前にエラーにし、I2V/T2Vへ自動代替しません。
+Ref2VA＋2段階生成では参照条件の空間グリッドを保ちます。先頭フレーム用の再エンコード・参照latentの2倍化は行いません。
+出力mode=h3_fused_ref2va、keyframe_conditioning=reference_imageで方式を確認できます。
+参照の外観保持は完全一致を保証しません。参照動画・参照音声・複数画像はこの版では未対応です。
+
+既存アプリに「画像の使い方」を追加し、先頭画像(I2V)/参照画像(Ref2VA)を選択できます。
+RunPodのBranchをref2va-v0.9へ変更して保存し、Builds/Releaseの反映を確認してからRef2VAを選びます。
+Endpoint IDとAPIキーは既存の接続設定を使います。CUDA13・L4・ディスク等はそのままです。
+
+CPUテスト17件とアプリ/中継APIのモック検証が成功。課金を伴うGPU生成・Ref2VAの画質/速度は未検証です。
+
 ## v8.1：PEP 668によるビルド失敗の修正
 
 Branch=`runtime-v0.8.1`。生成コードとworker_versionはv8のままです。
