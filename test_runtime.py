@@ -16,6 +16,21 @@ from keyframe_nodes import H3ReencodeFirstFrame
 
 
 class Contracts(unittest.TestCase):
+    def test_cuda_preflight_and_article_launch_flags(self):
+        cuda=SimpleNamespace(is_available=lambda:True,get_device_name=lambda i:'NVIDIA L4')
+        fake=SimpleNamespace(version=SimpleNamespace(cuda='13.0'),cuda=cuda,__version__='2.11.0+cu130')
+        with patch.dict(sys.modules,{'torch':fake}):
+            info=runtime.verify_runtime()
+            self.assertEqual(info['gpu'],'NVIDIA L4')
+            self.assertEqual(info['cuda_build'],'13.0')
+            fake.version.cuda='12.8'
+            with self.assertRaisesRegex(RuntimeError,'CUDA 13'):runtime.verify_runtime()
+            fake.version.cuda='13.0';cuda.is_available=lambda:False
+            with self.assertRaisesRegex(RuntimeError,'compatible'):runtime.verify_runtime()
+        for flag in ('--use-sage-attention','--disable-pinned-memory','--disable-comfy-compiler'):
+            self.assertIn(flag,runtime.comfy_command())
+        self.assertNotIn('--fast',runtime.comfy_command())
+
     def test_frames_dimensions_and_fixed_sampling(self):
         for seconds in (1,2,3,5,8,15):
             p=runtime.validate({'prompt':'A red toy ball rolls slowly.','duration_seconds':seconds})
