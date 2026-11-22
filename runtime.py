@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v8-cu130-sage'
+VERSION = 'h3-fused-turbo4-v9-ref2va'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -67,7 +67,7 @@ def load_manifest():
 def validate(p):
     if not isinstance(p, dict):
         raise ValueError('input must be an object')
-    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose', 'upscale', 'spectrum', 'sla', 'fast_vae'}
+    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose', 'upscale', 'spectrum', 'sla', 'fast_vae', 'mode'}
     if set(p) - allowed:
         raise ValueError('Unsupported input field; extra LoRA is not supported')
     if p.get('diagnose') is True:
@@ -75,7 +75,12 @@ def validate(p):
     prompt = p.get('prompt', '')
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 3000:
         raise ValueError('prompt must contain 1–3000 characters')
-    out = {'prompt': prompt.strip()}
+    mode = p.get('mode', 'i2v')
+    if mode not in ('i2v', 'ref2va'):
+        raise ValueError('mode must be i2v or ref2va')
+    if mode == 'ref2va' and 'image_base64' not in p:
+        raise ValueError('Ref2VA requires a reference image')
+    out = {'prompt': prompt.strip(), 'mode': mode}
     for flag in ('spectrum', 'sla', 'fast_vae'):
         value = p.get(flag, flag == 'spectrum')
         if type(value) is not bool:
@@ -103,11 +108,11 @@ def validate(p):
     frames += (5 - frames) % 17
     out.update(duration_seconds=frames/24, num_frames=frames)
     if 'image_base64' in p:
-        out['_source_png'] = normalize_source(p['image_base64'], out['width'], out['height'])
+        out['_source_png'] = normalize_source(p['image_base64'], out['width'], out['height'], reference=mode == 'ref2va')
     return out
 
 
-def normalize_source(encoded, width, height):
+def normalize_source(encoded, width, height, reference=False):
     from PIL import Image, ImageOps
     if not isinstance(encoded, str) or not 1 <= len(encoded) <= 4_000_000:
         raise ValueError('image_base64 must contain an image of at most 3 MB')
@@ -121,9 +126,13 @@ def normalize_source(encoded, width, height):
             rgba = original.convert('RGBA')
             background = Image.new('RGB', rgba.size, 'black')
             background.paste(rgba, mask=rgba.getchannel('A'))
-            scaled = ImageOps.contain(background, (width, height), Image.Resampling.LANCZOS)
-            canvas = Image.new('RGB', (width, height), 'black')
-            canvas.paste(scaled, ((width-scaled.width)//2, (height-scaled.height)//2))
+            if reference:
+                canvas = background.copy()
+                canvas.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            else:
+                scaled = ImageOps.contain(background, (width, height), Image.Resampling.LANCZOS)
+                canvas = Image.new('RGB', (width, height), 'black')
+                canvas.paste(scaled, ((width-scaled.width)//2, (height-scaled.height)//2))
     buffer = io.BytesIO()
     canvas.save(buffer, format='PNG')
     return buffer.getvalue()
@@ -189,8 +198,20 @@ def graph(p, source_filename=None):
         if not re.fullmatch(r'frame_h3_[a-f0-9]{32}\.png', source_filename):
             raise ValueError('Invalid internal image name')
         g['6'] = {'class_type': 'LoadImage', 'inputs': {'image': source_filename}}
-        g['7']['inputs']['first_frame'] = ['6', 0]
-        if p['upscale']:
+        if p['mode'] == 'ref2va':
+            g['7'] = {'class_type': 'MiniMaxH3ReferenceToVideo', 'inputs': {
+                'clip': ['3', 0], 'vae': ['4', 0], 'audio_vae': ['5', 0],
+                'prompt': p['prompt'], 'width': p['width'], 'height': p['height'],
+                'length': p['num_frames'], 'ref_image_size': 'match',
+                'ref_images.ref_image_0': ['6', 0]}}
+            if p['upscale']:
+                # References have their own spatial grid, independent of target size.
+                # Keep the encoded reference; do not stretch it to the target grid.
+                g['19']['inputs'].pop('positive')
+                g['20']['inputs']['conditioning'] = ['7', 0]
+        else:
+            g['7']['inputs']['first_frame'] = ['6', 0]
+        if p['upscale'] and p['mode'] == 'i2v':
             # Image-space resize + VAE encode is not equivalent to resizing VAE latents.
             # Keep the original text/image embeddings; replace only the spatial anchor.
             g['26'] = {'class_type': 'H3ReencodeFirstFrame', 'inputs': {
@@ -200,6 +221,8 @@ def graph(p, source_filename=None):
             g['20']['inputs']['conditioning'] = ['26', 0]
         suffix = source_filename.removeprefix('frame_h3_').removesuffix('.png')
     else:
+        if p['mode'] == 'ref2va':
+            raise ValueError('Ref2VA reference file is missing')
         suffix = uuid.uuid4().hex
     g['16']['inputs']['filename_prefix'] = 'jobs/' + suffix + '/video'
     return g
@@ -298,7 +321,7 @@ def ready():
                 raise RuntimeError('ComfyUI failed to start; see container logs')
             try:
                 info = call('/object_info')
-                missing = {node['class_type'] for node in graph(validate({'prompt': 'test', 'upscale': True})).values()} | {'LoadImage', 'H3ReencodeFirstFrame'}
+                missing = {node['class_type'] for node in graph(validate({'prompt': 'test', 'upscale': True})).values()} | {'LoadImage', 'H3ReencodeFirstFrame', 'MiniMaxH3ReferenceToVideo'}
                 missing -= set(info)
                 if missing:
                     raise RuntimeError('Required nodes missing: ' + ', '.join(sorted(missing)))
@@ -378,7 +401,7 @@ def execute(p, source_filename=None):
                         # A housekeeping error must not discard an already generated image.
                         print('History cleanup warning: ' + safe_text(cleanup_error), flush=True)
                     phase = 'ready'
-                    return {'video_base64': encoded, 'mime_type': 'video/mp4', 'mode': 'h3_fused_i2v' if source_filename else 'h3_fused_t2v',
+                    return {'video_base64': encoded, 'mime_type': 'video/mp4', 'mode': 'h3_fused_ref2va' if p['mode'] == 'ref2va' else 'h3_fused_i2v' if source_filename else 'h3_fused_t2v',
                             'worker_version': VERSION, 'model': 'MATLOWAI/minimax-h3-fused-turbo-int8-convrot',
                             'runtime_environment': runtime_environment,
                             'steps': 4, 'pass2_steps': 4 if p['upscale'] else 0,
@@ -388,7 +411,7 @@ def execute(p, source_filename=None):
                                 'fast_vae_requested': p['fast_vae'], 'runtime_effect_verified': False,
                                 'note': 'Check Spectrum actual/forecast and SLA sparse/dense counts in container logs'},
                             'base_width': p['width'], 'base_height': p['height'],
-                            'keyframe_conditioning': 'reencoded_at_output_resolution' if source_filename and p['upscale'] else 'base_resolution' if source_filename else 'none',
+                            'keyframe_conditioning': 'reference_image' if p['mode'] == 'ref2va' else 'reencoded_at_output_resolution' if source_filename and p['upscale'] else 'base_resolution' if source_filename else 'none',
                             'workflow_seconds': round(time.monotonic() - workflow_started, 2),
                             'width': p['output_width'], 'height': p['output_height'],
                             **{key: p[key] for key in ('seed', 'num_frames', 'duration_seconds')}}
