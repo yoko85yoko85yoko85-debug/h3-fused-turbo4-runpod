@@ -4,6 +4,7 @@
     "width": 512,
     "height": 512,
     "duration_seconds": 2,
-    "seed": 42
+    "seed": 42,
+    "upscale": true
   }
 }
