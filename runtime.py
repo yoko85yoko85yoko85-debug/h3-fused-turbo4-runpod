@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v3-speed'
+VERSION = 'h3-fused-turbo4-v4-quality'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -75,7 +75,7 @@ def validate(p):
         raise ValueError('prompt must contain 1–3000 characters')
     out = {'prompt': prompt.strip()}
     for flag in ('spectrum', 'sla', 'fast_vae'):
-        value = p.get(flag, True)
+        value = p.get(flag, False)
         if type(value) is not bool:
             raise ValueError(flag + ' must be true or false')
         out[flag] = value
