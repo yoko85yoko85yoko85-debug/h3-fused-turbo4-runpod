@@ -16,6 +16,34 @@ from keyframe_nodes import H3ReencodeFirstFrame
 
 
 class Contracts(unittest.TestCase):
+    def test_ref2va_uses_reference_not_first_frame(self):
+        image=Image.new('RGB',(100,200),'red');buf=io.BytesIO();image.save(buf,format='PNG')
+        encoded=base64.b64encode(buf.getvalue()).decode()
+        for upscale in (False,True):
+            p=runtime.validate({'prompt':'The toy from <Picture 1> moves gently.',
+                'mode':'ref2va','image_base64':encoded,'upscale':upscale})
+            normalized=Image.open(io.BytesIO(p['_source_png']))
+            self.assertEqual(normalized.size,(100,200))
+            g=runtime.graph(p,'frame_h3_'+'d'*32+'.png')
+            self.assertEqual(g['7']['class_type'],'MiniMaxH3ReferenceToVideo')
+            self.assertEqual(g['7']['inputs']['ref_images.ref_image_0'],['6',0])
+            self.assertEqual(g['7']['inputs']['ref_image_size'],'match')
+            self.assertNotIn('first_frame',g['7']['inputs'])
+            self.assertNotIn('26',g)
+            if upscale:
+                self.assertNotIn('positive',g['19']['inputs'])
+                self.assertEqual(g['20']['inputs']['conditioning'],['7',0])
+            for node in g.values():
+                for v in node['inputs'].values():
+                    if isinstance(v,list):self.assertIn(v[0],g)
+            with self.assertRaisesRegex(ValueError,'missing'):runtime.graph(p)
+
+    def test_reference_mode_rejects_missing_image_before_generation(self):
+        with patch.object(runtime,'generate') as generate:
+            for p in ({'prompt':'x','mode':'ref2va'},{'prompt':'x','mode':'invalid'}):
+                self.assertIn('error',handler.handler({'input':p}))
+            generate.assert_not_called()
+
     def test_cuda_preflight_and_article_launch_flags(self):
         cuda=SimpleNamespace(is_available=lambda:True,get_device_name=lambda i:'NVIDIA L4')
         fake=SimpleNamespace(version=SimpleNamespace(cuda='13.0'),cuda=cuda,__version__='2.11.0+cu130')
