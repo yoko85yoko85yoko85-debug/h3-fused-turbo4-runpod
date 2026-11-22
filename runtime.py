@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v4-quality'
+VERSION = 'h3-fused-turbo4-v5-keyframe'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -184,6 +184,14 @@ def graph(p, source_filename=None):
             raise ValueError('Invalid internal image name')
         g['6'] = {'class_type': 'LoadImage', 'inputs': {'image': source_filename}}
         g['7']['inputs']['first_frame'] = ['6', 0]
+        if p['upscale']:
+            # Image-space resize + VAE encode is not equivalent to resizing VAE latents.
+            # Keep the original text/image embeddings; replace only the spatial anchor.
+            g['26'] = {'class_type': 'H3ReencodeFirstFrame', 'inputs': {
+                'positive': ['7', 0], 'vae': ['4', 0], 'image': ['6', 0],
+                'width': p['output_width'], 'height': p['output_height']}}
+            g['19']['inputs'].pop('positive')
+            g['20']['inputs']['conditioning'] = ['26', 0]
         suffix = source_filename.removeprefix('frame_h3_').removesuffix('.png')
     else:
         suffix = uuid.uuid4().hex
@@ -266,7 +274,7 @@ def ready():
                 raise RuntimeError('ComfyUI failed to start; see container logs')
             try:
                 info = call('/object_info')
-                missing = {node['class_type'] for node in graph(validate({'prompt': 'test', 'upscale': True})).values()} | {'LoadImage'}
+                missing = {node['class_type'] for node in graph(validate({'prompt': 'test', 'upscale': True})).values()} | {'LoadImage', 'H3ReencodeFirstFrame'}
                 missing -= set(info)
                 if missing:
                     raise RuntimeError('Required nodes missing: ' + ', '.join(sorted(missing)))
@@ -355,6 +363,7 @@ def execute(p, source_filename=None):
                                 'fast_vae_requested': p['fast_vae'], 'runtime_effect_verified': False,
                                 'note': 'Check Spectrum actual/forecast and SLA sparse/dense counts in container logs'},
                             'base_width': p['width'], 'base_height': p['height'],
+                            'keyframe_conditioning': 'reencoded_at_output_resolution' if source_filename and p['upscale'] else 'base_resolution' if source_filename else 'none',
                             'workflow_seconds': round(time.monotonic() - workflow_started, 2),
                             'width': p['output_width'], 'height': p['output_height'],
                             **{key: p[key] for key in ('seed', 'num_frames', 'duration_seconds')}}
