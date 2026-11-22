@@ -1,5 +1,17 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v4：画質不良の切り分け
+
+ユーザーからv3で約5.17秒・768×768・480秒、画像がモザイク状に崩れるとの報告がありました。
+原因をSpectrum/SLA/Fast VAEのどれかに特定できるログ・比較結果は未取得です。
+`quality-v0.4`は3種類を**既定でオフ**に戻します。アプリはそのまま使えます。
+明示的なspectrum/sla/fast_vae指定がない限り、v2と同じ標準生成・タイルVAEの配線になります。
+高速化ノードは切り分け用途だけに残しています。修正版でのGPU画質・速度は未確認です。
+この変更で速度が上がるとは主張していません。長い生成を再実行する前に、RequestsのJSONとContainerログで原因を調べます。
+worker_version=`h3-fused-turbo4-v4-quality`。モデル準備込みworker_total_secondsと、準備後workflow_secondsは引き続き返します。
+
+以下のv3記述は以前の構成です。v4では省略時の3フラグはfalseです。
+
 既存のH3・FLUX・Moody Krea 2とは別の試験用Endpointです。
 モデルを同梱せず、初回生成時に必要なファイルだけを取得します。
 
@@ -128,7 +140,7 @@ ContainerログのSpectrum actual/forecast数、SLA sparse/dense数・fallback�
 結果のaccelerationは**要求設定**であり、実効の保証ではありません（runtime_effect_verified=false）。
 
 比較・切り分けはRunPod Requestsのinputへ `spectrum:false`、`sla:false`、`fast_vae:false` を指定できます。
-省略時はすべてtrue。upscaleは従来どおり任意です。1段階/2段階、画像あり/なしに適用します。
+v3では省略時はすべてtrue。v4ではすべてfalse。upscaleは従来どおり任意です。1段階/2段階、画像あり/なしに適用します。
 worker_total_secondsはモデル準備を含むワーカー処理時間、workflow_secondsはモデル準備後の生成・デコード・保存・応答準備時間です。
 
 更新：Manage → Edit endpoint → Repository configuration → Branchを **speed-v0.3** に変更して保存。
