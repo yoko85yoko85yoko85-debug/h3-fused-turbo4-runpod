@@ -1,5 +1,18 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v8.1：PEP 668によるビルド失敗の修正
+
+Branch=`runtime-v0.8.1`。生成コードとworker_versionはv8のままです。
+ビルドログで依存関係の解決より前に`externally-managed-environment`で失敗していました。
+Dockerイメージのメタデータを確認すると、新ベースはOSのPython/pipと/usr/localのPyTorchを使用していました。
+システムPythonを上書きせず、python3-venvで/opt/h3-venvを作り、--system-site-packagesで同梱CUDA PyTorchを参照します。
+アプリの依存関係はそのvenvへpython -m pipでインストール。PATHとsys.executableもこのvenvに揃えます。
+ビルド中にvenv使用・Torch継承・CUDA13・SageAttentionのimportを確認します。GPUテストではありません。
+モデル・Sage/CUDAの指定・生成設定はv8から変更していません。
+
+RunPodのBranchをruntime-v0.8.1へ変更して保存。Allowed CUDA versionsは13.0以降、GPUはL4のまま。
+ローカルでは仮想環境の動作確認と設定の差分確認を実施。新ベースでの完全DockerビルドはRunPodでの確認が必要です。
+
 ## v8：CUDA実行版とAttention起動設定の修正
 
 Branch=`runtime-v0.8`、worker_version=`h3-fused-turbo4-v8-cu130-sage`。
