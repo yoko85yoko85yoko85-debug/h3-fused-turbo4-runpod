@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v2-upscale'
+VERSION = 'h3-fused-turbo4-v3-speed'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -65,7 +65,7 @@ def load_manifest():
 def validate(p):
     if not isinstance(p, dict):
         raise ValueError('input must be an object')
-    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose', 'upscale'}
+    allowed = {'prompt', 'image_base64', 'width', 'height', 'duration_seconds', 'seed', 'diagnose', 'upscale', 'spectrum', 'sla', 'fast_vae'}
     if set(p) - allowed:
         raise ValueError('Unsupported input field; extra LoRA is not supported')
     if p.get('diagnose') is True:
@@ -74,6 +74,11 @@ def validate(p):
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 3000:
         raise ValueError('prompt must contain 1–3000 characters')
     out = {'prompt': prompt.strip()}
+    for flag in ('spectrum', 'sla', 'fast_vae'):
+        value = p.get(flag, True)
+        if type(value) is not bool:
+            raise ValueError(flag + ' must be true or false')
+        out[flag] = value
     for key, default, low, high in [('width', 512, 384, 1344), ('height', 512, 384, 1344),
                                    ('seed', 42, 0, 2147483647)]:
         value = p.get(key, default)
@@ -148,6 +153,32 @@ def graph(p, source_filename=None):
         g['13']['inputs']['samples'] = ['22', 0]
         # Decode the original audio explicitly, even though Combined also locks it.
         g['14']['inputs']['samples'] = ['12', 1]
+    if p['sla']:
+        g['23'] = {'class_type': 'H3SLAAttention', 'inputs': {
+            'model': ['1', 0], 'enabled': True, 'sparsity_ratio': 0.85,
+            'block_size': '64', 'min_seq_len': 8192, 'dense_last_steps': 0,
+            'dense_steps': '1', 'protect_audio': True, 'dense_backend': 'pytorch',
+            'disable_fp16_accum': True, 'reference_protection': 'Light',
+            'stabilize_motion': False, 'tail_correction': False,
+            'use_int8_qk': False, 'engine': 'triton'}}
+        g['17']['inputs']['model'] = ['23', 0]
+    if p['spectrum']:
+        settings = {'model': ['17', 0], 'enabled': True, 'blend_weight': 0.30,
+                    'degree': 1, 'ridge_lambda': 0.1, 'window_size': 2.0,
+                    'flex_window': 0.75, 'warmup_steps': 1, 'tail_actual_steps': 1,
+                    'max_history': 8, 'debug': True, 'history_storage': 'system_ram',
+                    'bootstrap_first_forecast': True, 'offline_smoothing_replay': True,
+                    'audio_blend_weight': 0.0, 'model_aware_mode': 'off'}
+        g['24'] = {'class_type': 'SpectrumApplyMiniMaxH3', 'inputs': settings}
+        g['8']['inputs']['model'] = ['24', 0]
+        if p['upscale']:
+            g['25'] = {'class_type': 'SpectrumApplyMiniMaxH3', 'inputs': copy.deepcopy(settings)}
+            g['20']['inputs']['model'] = ['25', 0]
+    if p['fast_vae']:
+        samples = g['13']['inputs']['samples']
+        g['13'] = {'class_type': 'MiniMaxH3VAEDecodeFast', 'inputs': {
+            'samples': samples, 'vae': ['4', 0], 'tiling': True,
+            'tile_size': 512, 'tile_overlap': 128, 'output_device': 'cpu'}}
     if source_filename:
         if not re.fullmatch(r'frame_h3_[a-f0-9]{32}\.png', source_filename):
             raise ValueError('Invalid internal image name')
@@ -253,6 +284,7 @@ def ready():
 
 def generate(p):
     source = None
+    started = time.monotonic()
     try:
         if '_source_png' in p:
             ready()
@@ -260,7 +292,9 @@ def generate(p):
             folder.mkdir(parents=True, exist_ok=True)
             source = folder / ('frame_h3_' + uuid.uuid4().hex + '.png')
             source.write_bytes(p['_source_png'])
-        return execute(p, source.name if source else None)
+        result = execute(p, source.name if source else None)
+        result['worker_total_seconds'] = round(time.monotonic() - started, 2)
+        return result
     finally:
         if source is not None:
             source.unlink(missing_ok=True)
@@ -269,6 +303,7 @@ def generate(p):
 def execute(p, source_filename=None):
     global phase
     ready()
+    workflow_started = time.monotonic()
     phase = 'workflow_submission'
     workflow = graph(p, source_filename)
     response = call('/prompt', {'prompt': workflow})
@@ -315,8 +350,12 @@ def execute(p, source_filename=None):
                             'worker_version': VERSION, 'model': 'MATLOWAI/minimax-h3-fused-turbo-int8-convrot',
                             'steps': 4, 'pass2_steps': 4 if p['upscale'] else 0,
                             'pass2_denoise': 0.35 if p['upscale'] else None,
-                            'fps': 24, 'turbo': True, 'audio': True, 'spectrum': False, 'upscale': p['upscale'],
+                            'fps': 24, 'turbo': True, 'audio': True, 'spectrum': p['spectrum'], 'upscale': p['upscale'],
+                            'acceleration': {'spectrum_requested': p['spectrum'], 'sla_requested': p['sla'],
+                                'fast_vae_requested': p['fast_vae'], 'runtime_effect_verified': False,
+                                'note': 'Check Spectrum actual/forecast and SLA sparse/dense counts in container logs'},
                             'base_width': p['width'], 'base_height': p['height'],
+                            'workflow_seconds': round(time.monotonic() - workflow_started, 2),
                             'width': p['output_width'], 'height': p['output_height'],
                             **{key: p[key] for key in ('seed', 'num_frames', 'duration_seconds')}}
             time.sleep(1)
