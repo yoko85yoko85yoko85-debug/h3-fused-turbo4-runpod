@@ -1,5 +1,23 @@
 # H3 Fused Turbo — RunPod Serverless trial
 
+## v6：SLA単独比較版
+
+ブランチ `sla-v0.6`、worker_version=`h3-fused-turbo4-v6-sla`。
+v5でユーザーが冒頭モザイクの解消を報告しました（768×768、56フレーム、実行179秒）。
+その先頭画像の再エンコード処理を保ち、既定設定の変更はSLA有効化だけです。
+Spectrum=false、fast_vae=false、sla=true。SLAのパラメーターはv3と同じ0.85/64、音声保護、参照Light、初回dense、8192未満dense、Tritonです。
+過去ログでは2段階目で疎アテンションが動作しましたが、今回の画質・速度は未検証です。
+出力accelerationは要求設定です。実効はContainerログのSLA calls/sparse/dense/fallbackで確認します。
+
+RunPodのBranchをsla-v0.6へ変更・保存。アプリの変更は不要です。
+比較時は前回と同じGPU・画像・プロンプト・解像度・尺・シードを使用してください。
+前回スクリーンショットの条件：384×384→768×768、要求2秒（56フレーム）、seed2001309655。
+アプリの「シードと生成設定」でランダムをオフにして上記シードを入力します。
+初回のモデル取得・JIT等が時間に影響します。worker_total_seconds、workflow_secondsも確認します。
+
+CPUテスト14件成功。SLA以外の配線がv5標準構成と一致することを検証しました。
+GPU実生成・画質・速度改善は更新後の比較が必要です。結果が悪ければkeyframe-v0.5へ戻せます。
+
 ## v5：I2Vの先頭画像条件を最終解像度で再エンコード
 
 ブランチ `keyframe-v0.5`、worker_version=`h3-fused-turbo4-v5-keyframe`。
