@@ -18,8 +18,9 @@ RUN git init /tmp/plaguekind && cd /tmp/plaguekind && git remote add origin http
 RUN python -c "import triton; print('Triton available')"
 RUN python -c "import torch; print('torch=='+torch.__version__.split('+')[0])" > /tmp/torch-constraint.txt && pip install -c /tmp/torch-constraint.txt -r /opt/ComfyUI/requirements.txt runpod==1.7.9 'huggingface-hub>=0.36,<2'
 WORKDIR /app
+COPY keyframe_nodes.py /opt/ComfyUI/custom_nodes/frame_h3_anchor/__init__.py
 COPY handler.py runtime.py models.json workflow_api.json ./
-RUN python -m py_compile handler.py runtime.py && python runtime.py --check
+RUN python -m py_compile handler.py runtime.py /opt/ComfyUI/custom_nodes/frame_h3_anchor/__init__.py && python runtime.py --check
 ENV COMFY_DIR=/opt/ComfyUI MODEL_ROOT=/models HF_HOME=/models/huggingface
 # Model weights are downloaded on the first generation, never during image build.
 CMD ["python", "-u", "handler.py"]
