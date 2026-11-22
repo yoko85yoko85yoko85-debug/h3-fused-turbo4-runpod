@@ -7,11 +7,12 @@
     }
   },
   "2": {
-    "class_type": "CLIPLoader",
+    "class_type": "ClipProjDeviceLoader",
     "inputs": {
       "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
       "type": "krea2",
-      "device": "default"
+      "device": "cuda:0",
+      "mode": "dynamic"
     }
   },
   "3": {
@@ -21,7 +22,7 @@
         "2",
         0
       ],
-      "projection": "mmh3-4b-ClipProj-v3-mlp.safetensors"
+      "projection": "mmh3-4b-ClipProj-v3.1-mlp.safetensors"
     }
   },
   "4": {
@@ -127,7 +128,7 @@
     }
   },
   "13": {
-    "class_type": "VAEDecodeTiled",
+    "class_type": "VAEDecode",
     "inputs": {
       "samples": [
         "12",
@@ -136,11 +137,7 @@
       "vae": [
         "4",
         0
-      ],
-      "tile_size": 512,
-      "overlap": 64,
-      "temporal_size": 64,
-      "temporal_overlap": 8
+      ]
     }
   },
   "14": {
