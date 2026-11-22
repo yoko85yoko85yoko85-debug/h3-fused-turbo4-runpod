@@ -47,3 +47,25 @@ Branchをarticle-v0.7へ変更、BuildsとReleasesを確認。
 GPUはL4のまま。画像入力の有無とプロンプトは比較目的に合わせて同じものを使う。
 article-compare-request.jsonは画像なしT2Vの短いプロンプト例であり、記事の動画の厳密な再現プロンプトではない。
 旧版へ戻す場合はsla-v0.6またはkeyframe-v0.5の既存ブランチを使う。
+
+## 追加照合：Colab起動コードとv7実行ログ
+
+Colab配布元：https://colab.research.google.com/drive/15OTiktuEkYrASbz-ertbLHsGPezmbp5z
+上記ノートブックの公開ダウンロードを取得し、コードを読むだけで照合（実行なし）。
+記事本文やJSONだけでは分からなかった次の実行設定が見つかった。
+
+- Colab起動：--use-sage-attention --disable-pinned-memory --disable-comfy-compiler。
+- インストール対象にsageattentionとcomfy-kitchenが含まれ、comfy-kitchenは追加アップグレード。
+- torch2.11/cu130切替コードも記載されているが**コメントアウト**。ノートブックから、速度測定時のTorch/CUDA実行版を断定してはいけない。
+- v7ログはtorch2.9.1+cu128、Using pytorch attention。最適化CUDA演算にcu130以上が必要との明示的警告。
+- CUDA/Tritonバックエンドはavailable=true、disabled=true、eagerはenabled。これはGPUを使用していない意味ではない。
+- 19:24:23.984～19:30:04.651がサンプラー区間（約341秒）。19:30:04.651～19:32:17.687がその後の処理（約133秒）。
+- v7のSpectrum debug=falseは配布JSONに合わせた値。そのためactual/forecastのサマリーがなく、無効だったと断定できない。
+
+v8ではCUDA13対応PyTorchへ更新し、Colabと同じ上記3起動フラグを適用。
+SageAttentionは実行版を固定するため1.0.6（Triton版）を使用。Colabのunpinned最新版と同一とは主張しない。
+Spectrumのdebugだけtrueへ変更し、モデル演算省略数を記録する。
+モデル/解像度/尺/サンプラー/映像デコードの設定はv7から変えない。
+GPUの変更で差を埋めず、L4のまま比較する。ホストはCUDA13対応ドライバが必要。
+Docker Hubでpytorch/pytorch:2.11.0-cuda13.0-cudnn9-runtimeタグの存在を確認済み。
+v8のDockerビルド・GPUカーネル実行・速度/画質は未検証で、同じ速度になる保証ではない。
