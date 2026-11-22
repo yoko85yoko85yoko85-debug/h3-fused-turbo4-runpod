@@ -44,6 +44,15 @@
       "filename": "minimax_h3_audio_vae_fp32.safetensors",
       "bytes": 605254808,
       "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48"
+    },
+    {
+      "repo": "Tridae/H3LatentUpscaler",
+      "revision": "5c87ab7cf8425a2cfbc3d21da1bffbd686ce67a6",
+      "remote_path": "h3_clean_latent_upscaler_film_epoch200.safetensors",
+      "folder": "h3_latent_upscalers",
+      "filename": "h3_clean_latent_upscaler_film_epoch200.safetensors",
+      "bytes": 59022848,
+      "sha256": "984afb58f11d01274b90d880596ce2f93bc9c512db66fdeecd4e2d99b371d3e4"
     }
   ]
 }
