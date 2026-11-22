@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
-VERSION = 'h3-fused-turbo4-v6-sla'
+VERSION = 'h3-fused-turbo4-v7-article'
 COMFY_DIR = Path(os.environ.get('COMFY_DIR', '/opt/ComfyUI'))
 MODEL_ROOT = Path(os.environ.get('MODEL_ROOT', '/models'))
 API = 'http://127.0.0.1:8188'
@@ -75,7 +75,7 @@ def validate(p):
         raise ValueError('prompt must contain 1–3000 characters')
     out = {'prompt': prompt.strip()}
     for flag in ('spectrum', 'sla', 'fast_vae'):
-        value = p.get(flag, flag == 'sla')
+        value = p.get(flag, flag == 'spectrum')
         if type(value) is not bool:
             raise ValueError(flag + ' must be true or false')
         out[flag] = value
@@ -163,17 +163,21 @@ def graph(p, source_filename=None):
             'use_int8_qk': False, 'engine': 'triton'}}
         g['17']['inputs']['model'] = ['23', 0]
     if p['spectrum']:
-        settings = {'model': ['17', 0], 'enabled': True, 'blend_weight': 0.30,
+        settings = {'model': ['23', 0] if p['sla'] else ['1', 0], 'enabled': True, 'blend_weight': 0.30,
                     'degree': 1, 'ridge_lambda': 0.1, 'window_size': 2.0,
                     'flex_window': 0.75, 'warmup_steps': 1, 'tail_actual_steps': 1,
-                    'max_history': 8, 'debug': True, 'history_storage': 'system_ram',
+                    'max_history': 8, 'debug': False, 'history_storage': 'system_ram',
                     'bootstrap_first_forecast': True, 'offline_smoothing_replay': True,
-                    'audio_blend_weight': 0.0, 'model_aware_mode': 'off'}
+                    'anchor_residual_feedback': False, 'selective_rollback_correction': False,
+                    'audio_blend_weight': 0.0, 'offline_archive_storage': 'system_ram',
+                    'model_aware_mode': 'off', 'model_aware_risk_threshold': 0.65,
+                    'model_aware_trust_shrinkage': False, 'model_aware_replay_generic_correction': False,
+                    'generic_correction_mode': 'coordinate_rls', 'generic_correction_limiter': 'hard_clip',
+                    'generic_correction_limit': 0.4, 'generic_correction_attenuation': 'no_attenuation',
+                    'sa_pece_forecast_policy': 'balanced'}
         g['24'] = {'class_type': 'SpectrumApplyMiniMaxH3', 'inputs': settings}
-        g['8']['inputs']['model'] = ['24', 0]
-        if p['upscale']:
-            g['25'] = {'class_type': 'SpectrumApplyMiniMaxH3', 'inputs': copy.deepcopy(settings)}
-            g['20']['inputs']['model'] = ['25', 0]
+        # Match the distributed graph: loader -> Spectrum -> SigmaShift -> guider.
+        g['17']['inputs']['model'] = ['24', 0]
     if p['fast_vae']:
         samples = g['13']['inputs']['samples']
         g['13'] = {'class_type': 'MiniMaxH3VAEDecodeFast', 'inputs': {
