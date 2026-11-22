@@ -4,8 +4,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends git build-essen
 WORKDIR /opt
 ARG COMFY_REV=f99de883d5e65317c7f4a4b617b5aa7936622029
 ARG CLIPPROJ_REV=c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c
+ARG UPSCALER_REV=895e3c471164423f0ea0e8eaf45eb701efe641ae
+ARG UPSCALER_ARCH_REV=e98237773011523528353a8beb4863e65b099a38
 RUN git init ComfyUI && cd ComfyUI && git remote add origin https://github.com/Comfy-Org/ComfyUI.git && git fetch --depth 1 origin ${COMFY_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
 RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-ClipProj && cd /opt/ComfyUI/custom_nodes/ComfyUI-ClipProj && git remote add origin https://github.com/nicolab28/ComfyUI-ClipProj.git && git fetch --depth 1 origin ${CLIPPROJ_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
+RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-MiniMaxH3_LatentUpscaler && cd /opt/ComfyUI/custom_nodes/ComfyUI-MiniMaxH3_LatentUpscaler && git remote add origin https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler.git && git fetch --depth 1 origin ${UPSCALER_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
+RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-H3-Latent-Upscaler-Mamad8 && cd /opt/ComfyUI/custom_nodes/ComfyUI-H3-Latent-Upscaler-Mamad8 && git remote add origin https://github.com/mamad8c/ComfyUI-H3-Latent-Upscaler-Mamad8.git && git fetch --depth 1 origin ${UPSCALER_ARCH_REV} && git checkout --detach FETCH_HEAD && rm -rf .git
 RUN python -c "import torch; print('torch=='+torch.__version__.split('+')[0])" > /tmp/torch-constraint.txt && pip install -c /tmp/torch-constraint.txt -r /opt/ComfyUI/requirements.txt runpod==1.7.9 'huggingface-hub>=0.36,<2'
 WORKDIR /app
 COPY handler.py runtime.py models.json workflow_api.json ./
