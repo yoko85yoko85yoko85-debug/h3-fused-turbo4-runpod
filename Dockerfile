@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda13.0-cudnn9-runtime
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 TOKENIZERS_PARALLELISM=false
 RUN apt-get update && apt-get install -y --no-install-recommends git build-essential ffmpeg libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt
@@ -16,7 +16,8 @@ RUN git init /opt/ComfyUI/custom_nodes/ComfyUI-Spectrum-MiniMax-H3 && cd /opt/Co
 # Install only the H3 SLA subpackage, not unrelated nodes from the parent repository.
 RUN git init /tmp/plaguekind && cd /tmp/plaguekind && git remote add origin https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes.git && git fetch --depth 1 origin ${SLA_REV} && git checkout --detach FETCH_HEAD && cp -a ComfyUI-H3-SLA-Attention /opt/ComfyUI/custom_nodes/ComfyUI-H3-SLA-Attention && rm -rf /tmp/plaguekind
 RUN python -c "import triton; print('Triton available')"
-RUN python -c "import torch; print('torch=='+torch.__version__.split('+')[0])" > /tmp/torch-constraint.txt && pip install -c /tmp/torch-constraint.txt -r /opt/ComfyUI/requirements.txt runpod==1.7.9 'huggingface-hub>=0.36,<2'
+RUN python -c "import torch; print('torch=='+torch.__version__.split('+')[0])" > /tmp/torch-constraint.txt && pip install -c /tmp/torch-constraint.txt -r /opt/ComfyUI/requirements.txt runpod==1.7.9 'huggingface-hub>=0.36,<2' sageattention==1.0.6
+RUN python -c "import torch, sageattention; assert int(torch.version.cuda.split('.')[0]) >= 13; print('CUDA 13 PyTorch and SageAttention imports OK; GPU kernels not tested')"
 WORKDIR /app
 COPY keyframe_nodes.py /opt/ComfyUI/custom_nodes/frame_h3_anchor/__init__.py
 COPY handler.py runtime.py models.json workflow_api.json ./
