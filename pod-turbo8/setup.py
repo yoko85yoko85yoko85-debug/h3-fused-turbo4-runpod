@@ -32,6 +32,8 @@ def main():
         downloaded=Path(hf_hub_download(repo_id=MANIFEST['repository'],filename=spec['path'],revision=MANIFEST['revision'],local_dir=COMFY/'models',force_download=path.exists()))
         if not matches(downloaded,spec):raise RuntimeError('Model integrity mismatch: '+spec['path'])
         print('SHA256 OK: '+spec['path'],flush=True)
+    node_dir=COMFY/'custom_nodes/h3_duration_presets';node_dir.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(ROOT/'duration_presets.py',node_dir/'__init__.py')
     write(ROOT)
     from PIL import Image,ImageDraw
     example=COMFY/'input/h3-example.png';example.parent.mkdir(parents=True,exist_ok=True)
