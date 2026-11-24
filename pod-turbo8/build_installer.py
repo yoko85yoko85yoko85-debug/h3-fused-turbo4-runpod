@@ -1,7 +1,7 @@
 from pathlib import Path
 root=Path(__file__).resolve().parent
 s=(root/'installer-prefix.sh').read_text()
-for name in ('models.json','workflow.py','manage.py','setup.py'):
+for name in ('models.json','workflow.py','manage.py','setup.py','duration_presets.py'):
     marker='H3_EMBED_'+name.replace('.','_').upper()
     s+='\ncat > "$H3_POD_DIR/'+name+'" <<\''+marker+"'\n"+(root/name).read_text()+'\n'+marker+'\n'
 s+='''
