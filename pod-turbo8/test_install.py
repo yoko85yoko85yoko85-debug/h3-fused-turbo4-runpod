@@ -41,6 +41,18 @@ class Tests(unittest.TestCase):
             self.assertEqual((frames-5)%17,0)
         self.assertEqual(api['20']['inputs']['values.a'],[19,0])
 
+    def test_duration_presets(self):
+        import duration_presets,math
+        node=duration_presets.H3DurationPreset()
+        choices=node.INPUT_TYPES()['required']['duration'][0]
+        self.assertEqual(choices,['2 秒','5 秒','7 秒','10 秒','12 秒','15 秒'])
+        for label,frames in zip(choices,[56,124,175,243,294,362]):
+            value=node.select(label)[0];n=math.ceil(value*24)
+            self.assertEqual(n+(5-n)%17,frames)
+        with self.assertRaises(ValueError):node.select('3 秒')
+        _,api=workflow.build_aspect()
+        self.assertEqual(api['19']['class_type'],'H3DurationPreset')
+
     def test_write_workflow(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow.write(tmp)
