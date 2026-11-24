@@ -16,6 +16,20 @@ class Tests(unittest.TestCase):
         self.assertEqual(api['7']['inputs']['length'],56)
         self.assertEqual(api['15']['inputs']['audio'],[14,0])
 
+    def test_aspect_selector(self):
+        ui,api=workflow.build_aspect();old_ui,old_api=workflow.build()
+        nodes={n['id']:n for n in ui['nodes']}
+        self.assertEqual(api['7']['inputs']['width'],[17,0])
+        self.assertEqual(api['7']['inputs']['height'],[17,1])
+        self.assertEqual(api['17']['inputs']['multiple'],32)
+        for key in old_api:
+            if key!='7':self.assertEqual(api[key],old_api[key])
+        self.assertEqual(api['7']['inputs']['length'],old_api['7']['inputs']['length'])
+        for lid,source,out,target,ins,kind in ui['links']:
+            self.assertEqual(nodes[source]['outputs'][out]['type'],kind)
+            self.assertEqual(nodes[target]['inputs'][ins]['link'],lid)
+        self.assertEqual(nodes[7]['inputs'][-2]['widget'],{'name':'width'})
+
     def test_write_workflow(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow.write(tmp)
