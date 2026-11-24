@@ -169,7 +169,10 @@ def build_aspect():
         selector['outputs'][slot]['links'].append(lid)
         api['7']['inputs'][name]=[17,slot]
     byid[7]['widgets_values'][1:3]=[672,384]
-    ui['last_node_id']=17;ui['last_link_id']=len(ui['links'])
+    ui['nodes'].append({'id':18,'type':'MarkdownNote','title':'サイズ目安表',
+        'pos':[370,850],'size':[400,570],'flags':{},'order':17,'mode':0,
+        'inputs':[],'outputs':[],'properties':{},'widgets_values':['## メガピクセルの目安\n\n**16:9・multiple＝32 の場合**\n\n| megapixels | 出力サイズ |\n|---|---|\n| 0.2 | 608 × 352 |\n| 0.3 | 736 × 416 |\n| 0.4 | 864 × 480 |\n| 0.5 | 960 × 544 |\n| 0.6 | 1056 × 608 |\n| 0.7 | 1152 × 640 |\n| 0.8 | 1216 × 672 |\n| 0.9 | 1280 × 736 |\n| 0.98 | 1344 × 768 |\n\nアスペクト比を変えると、同じMPでも幅・高さは変わります。\n32px刻みで丸めるため、比率と画素数は概算です。\n\n**正方形の例：1:1・0.6MP → 800 × 800**\n\n長さはH3ノードの length で指定します。']})
+    ui['last_node_id']=18;ui['last_link_id']=len(ui['links'])
     api['17']={'class_type':'ResolutionSelector','inputs':{'aspect_ratio':'16:9 (Widescreen)','megapixels':0.25,'multiple':32}}
     return ui,api
 
