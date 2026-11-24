@@ -55,6 +55,22 @@ class Tests(unittest.TestCase):
         with patch.object(manage.urllib.request,'urlopen',return_value=MagicMock()):
             with self.assertRaisesRegex(RuntimeError,'bypass'):manage.check_proxy(8188)
 
+    def test_port_check_allows_time_wait(self):
+        import socket
+        server=socket.socket();server.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+        server.bind(('127.0.0.1',0));port=server.getsockname()[1];server.listen()
+        client=socket.create_connection(('127.0.0.1',port));peer,_=server.accept()
+        peer.shutdown(socket.SHUT_WR);client.recv(1);client.close();peer.close();server.close()
+        manage.wait_for_port('127.0.0.1',port,seconds=0)
+
+    def test_port_check_refuses_live_listener(self):
+        import socket
+        with socket.socket() as server:
+            server.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            server.bind(('127.0.0.1',0));server.listen()
+            with self.assertRaisesRegex(RuntimeError,'live listener'):
+                manage.wait_for_port('127.0.0.1',server.getsockname()[1],seconds=0)
+
     def test_manifest(self):
         m=json.loads((Path(__file__).parent/'models.json').read_text())
         self.assertEqual(len(m['files']),5)
