@@ -24,11 +24,22 @@ class Tests(unittest.TestCase):
         self.assertEqual(api['17']['inputs']['multiple'],32)
         for key in old_api:
             if key!='7':self.assertEqual(api[key],old_api[key])
-        self.assertEqual(api['7']['inputs']['length'],old_api['7']['inputs']['length'])
+        self.assertEqual(api['7']['inputs']['length'],[20,1])
         for lid,source,out,target,ins,kind in ui['links']:
             self.assertEqual(nodes[source]['outputs'][out]['type'],kind)
             self.assertEqual(nodes[target]['inputs'][ins]['link'],lid)
-        self.assertEqual(nodes[7]['inputs'][-2]['widget'],{'name':'width'})
+        self.assertEqual(next(x for x in nodes[7]['inputs'] if x['name']=='width')['widget'],{'name':'width'})
+
+    def test_seconds_frame_conversion(self):
+        import math
+        ui,api=workflow.build_aspect()
+        expression=api['20']['inputs']['expression']
+        for seconds,expected in [(2,56),(3,73),(5,124),(8,192),(10,243),(15,362),(2.33,56)]:
+            frames=eval(expression,{'__builtins__':{}},{'a':seconds,'ceil':math.ceil,'max':max})
+            self.assertEqual(frames,expected)
+            self.assertGreaterEqual(frames/24,seconds)
+            self.assertEqual((frames-5)%17,0)
+        self.assertEqual(api['20']['inputs']['values.a'],[19,0])
 
     def test_write_workflow(self):
         with tempfile.TemporaryDirectory() as tmp:
