@@ -206,11 +206,57 @@ def build_aspect():
     return ui,api
 
 
+def build_original_controls():
+    """Match the uploaded workflow's active geometry and duration controls."""
+    ui,api=build();byid={n['id']:n for n in ui['nodes']}
+    def node(i,kind,title,pos,size,outputs,widgets,inputs=None):
+        n={'id':i,'type':kind,'title':title,'pos':pos,'size':size,'flags':{},'order':i-1,'mode':0,
+           'inputs':inputs or [],'outputs':[{'name':name,'type':typ,'links':[],'slot_index':slot} for slot,(name,typ) in enumerate(outputs)],
+           'properties':{'Node name for S&R':kind},'widgets_values':widgets}
+        ui['nodes'].append(n);byid[i]=n;return n
+    node(17,'ImageScaleToTotalPixels','生成サイズ（MP・画像の比率を維持）',[370,680],[340,190],
+         [('IMAGE','IMAGE')],['nearest-exact',0.4,32])
+    node(18,'GetImageSize','リサイズ後の幅・高さ',[740,680],[260,130],
+         [('width','INT'),('height','INT'),('batch_size','INT')],[])
+    node(19,'PrimitiveFloat','動画の長さ（秒）',[740,880],[330,110],[('FLOAT','FLOAT')],[10.0])
+    expression='max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17'
+    node(20,'ComfyMathExpression','秒 → フレーム（以前と同じ式）',[1140,680],[380,180],
+         [('FLOAT','FLOAT'),('INT','INT'),('BOOL','BOOLEAN')],[expression])
+    def connect(source,out,target,name,widget=False,typ=None):
+        output=byid[source]['outputs'][out];kind=typ or output['type'];lid=len(ui['links'])+1
+        slot=len(byid[target]['inputs'])
+        entry={'name':name,'type':kind,'link':lid}
+        if widget:entry['widget']={'name':name}
+        byid[target]['inputs'].append(entry);output['links'].append(lid)
+        ui['links'].append([lid,source,out,target,slot,output['type']])
+    connect(6,0,17,'image');connect(17,0,18,'image')
+    connect(18,0,7,'width',True);connect(18,1,7,'height',True)
+    connect(19,0,20,'values.a',typ='FLOAT,INT,BOOLEAN')
+    byid[20]['inputs'].append({'name':'values.b','type':'FLOAT,INT,BOOLEAN','shape':7,'link':None})
+    connect(20,1,7,'length',True)
+    api['17']={'class_type':'ImageScaleToTotalPixels','inputs':{'image':[6,0],'upscale_method':'nearest-exact','megapixels':0.4,'resolution_steps':32}}
+    api['18']={'class_type':'GetImageSize','inputs':{'image':[17,0]}}
+    api['19']={'class_type':'PrimitiveFloat','inputs':{'value':10.0}}
+    api['20']={'class_type':'ComfyMathExpression','inputs':{'expression':expression,'values.a':[19,0]}}
+    api['7']['inputs'].update(width=[18,0],height=[18,1],length=[20,1])
+    byid[7]['widgets_values'][3]=243
+    # Exactly as before: the original input, not the resized preview, anchors H3.
+    assert api['7']['inputs']['first_frame']==[6,0]
+    old_table=next(n for n in build_aspect()[0]['nodes'] if n['id']==18)['widgets_values'][0].split('## 動画の長さ')[0]
+    note='## 前のワークフローと同じ設定方法\n\n生成サイズは「生成サイズ」のmegapixelsで指定します。初期値0.4MP、32px刻み、nearest-exact。入力画像の縦横比を維持して幅・高さを自動取得します。\n\n手動のアスペクト比選択は不要です。元のResolution Selectorは未接続だったため使いません。\n\n時間は「動画の長さ（秒）」に入力します。元の初期値は10秒。元と同じround＋17k+5変換で約10.13秒になります。6択ノードは使いません。\n\n'+old_table
+    node(21,'MarkdownNote','使い方とサイズ目安',[370,1040],[500,760],[],[note])
+    ui['last_node_id']=21;ui['last_link_id']=len(ui['links'])
+    return ui,api
+
+
 def write(root):
     root=Path(root);ui,api=build()
     dest=root/'ComfyUI/user/default/workflows';dest.mkdir(parents=True,exist_ok=True)
     (dest/'H3-Turbo8-I2V.json').write_text(json.dumps(ui,ensure_ascii=False,indent=2))
     (root/'H3-Turbo8-I2V-API.json').write_text(json.dumps(api,ensure_ascii=False,indent=2))
+    original_ui,original_api=build_original_controls()
+    (dest/'H3-Turbo8-I2V-OriginalControls.json').write_text(json.dumps(original_ui,ensure_ascii=False,indent=2))
+    (root/'H3-Turbo8-I2V-OriginalControls-API.json').write_text(json.dumps(original_api,ensure_ascii=False,indent=2))
     aspect_ui,aspect_api=build_aspect()
     (dest/'H3-Turbo8-I2V-Aspect.json').write_text(json.dumps(aspect_ui,ensure_ascii=False,indent=2))
     (root/'H3-Turbo8-I2V-Aspect-API.json').write_text(json.dumps(aspect_api,ensure_ascii=False,indent=2))
