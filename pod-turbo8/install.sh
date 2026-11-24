@@ -148,11 +148,40 @@ def build():
     return {'last_node_id':16,'last_link_id':len(links),'nodes':nodes,'links':links,'groups':[],
        'config':{},'extra':{'ds':{'scale':0.45,'offset':[30,100]}},'version':0.4},api
 
+def build_aspect():
+    ui,api=build()
+    byid={n['id']:n for n in ui['nodes']}
+    selector={'id':17,'type':'ResolutionSelector','title':'サイズ設定：アスペクト比 / MP',
+       'pos':[370,600],'size':[330,210],'flags':{},'order':0,'mode':0,'inputs':[],
+       'outputs':[{'name':'width','type':'INT','links':[],'slot_index':0},
+                  {'name':'height','type':'INT','links':[],'slot_index':1}],
+       'properties':{'Node name for S&R':'ResolutionSelector'},
+       'widgets_values':['16:9 (Widescreen)',0.25,32],
+       'widgets_values_named':{'aspect_ratio':'16:9 (Widescreen)','megapixels':0.25,'multiple':32}}
+    ui['nodes'].append(selector)
+    # Preserve input slot indices of the existing image/CLIP/VAE connections.
+    # Numeric widgets become connected inputs; their saved widget values remain
+    # in the original positions so prompt and length still deserialize normally.
+    for slot,name in enumerate(('width','height')):
+        lid=len(ui['links'])+1;target_slot=len(byid[7]['inputs'])
+        ui['links'].append([lid,17,slot,7,target_slot,'INT'])
+        byid[7]['inputs'].append({'name':name,'type':'INT','widget':{'name':name},'link':lid})
+        selector['outputs'][slot]['links'].append(lid)
+        api['7']['inputs'][name]=[17,slot]
+    byid[7]['widgets_values'][1:3]=[672,384]
+    ui['last_node_id']=17;ui['last_link_id']=len(ui['links'])
+    api['17']={'class_type':'ResolutionSelector','inputs':{'aspect_ratio':'16:9 (Widescreen)','megapixels':0.25,'multiple':32}}
+    return ui,api
+
+
 def write(root):
     root=Path(root);ui,api=build()
     dest=root/'ComfyUI/user/default/workflows';dest.mkdir(parents=True,exist_ok=True)
     (dest/'H3-Turbo8-I2V.json').write_text(json.dumps(ui,ensure_ascii=False,indent=2))
     (root/'H3-Turbo8-I2V-API.json').write_text(json.dumps(api,ensure_ascii=False,indent=2))
+    aspect_ui,aspect_api=build_aspect()
+    (dest/'H3-Turbo8-I2V-Aspect.json').write_text(json.dumps(aspect_ui,ensure_ascii=False,indent=2))
+    (root/'H3-Turbo8-I2V-Aspect-API.json').write_text(json.dumps(aspect_api,ensure_ascii=False,indent=2))
 
 if __name__=='__main__':
     import sys
