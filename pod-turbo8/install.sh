@@ -175,10 +175,10 @@ def build_aspect():
     ui['last_node_id']=18;ui['last_link_id']=len(ui['links'])
     api['17']={'class_type':'ResolutionSelector','inputs':{'aspect_ratio':'16:9 (Widescreen)','megapixels':0.25,'multiple':32}}
     expression='max(5, ceil(a * 24)) + (5 - max(5, ceil(a * 24))) % 17'
-    duration={'id':19,'type':'PrimitiveFloat','title':'動画の長さ（秒）',
+    duration={'id':19,'type':'H3DurationPreset','title':'動画の長さ（秒・6択）',
        'pos':[740,650],'size':[330,110],'flags':{},'order':0,'mode':0,'inputs':[],
        'outputs':[{'name':'FLOAT','type':'FLOAT','links':[],'slot_index':0}],
-       'properties':{'Node name for S&R':'PrimitiveFloat'},'widgets_values':[2.0]}
+       'properties':{'Node name for S&R':'H3DurationPreset'},'widgets_values':['2 秒']}
     convert={'id':20,'type':'ComfyMathExpression','title':'秒 → H3フレーム数（変更不要）',
        'pos':[1140,650],'size':[380,180],'flags':{},'order':1,'mode':0,
        'inputs':[{'name':'values.a','type':'FLOAT,INT,BOOLEAN','link':None},
@@ -195,13 +195,13 @@ def build_aspect():
     ui['links'].append([lid,20,1,7,target_slot,'INT'])
     convert['outputs'][1]['links'].append(lid)
     byid[7]['inputs'].append({'name':'length','type':'INT','widget':{'name':'length'},'link':lid})
-    api['19']={'class_type':'PrimitiveFloat','inputs':{'value':2.0}}
+    api['19']={'class_type':'H3DurationPreset','inputs':{'duration':'2 秒'}}
     api['20']={'class_type':'ComfyMathExpression','inputs':{'expression':expression,'values.a':[19,0]}}
     api['7']['inputs']['length']=[20,1]
     ui['last_node_id']=20;ui['last_link_id']=len(ui['links'])
     note=next(n for n in ui['nodes'] if n['id']==18)
     note['widgets_values'][0]=note['widgets_values'][0].replace('長さはH3ノードの length で指定します。',
-      '## 動画の長さ\n\n「動画の長さ（秒）」に秒数を入力します。まずは1〜15秒で使用してください。\nH3の17k+5フレーム刻みに切り上げるため、指定より少し長くなります。\n\n| 指定秒数 | 実際の長さ（24fps） |\n|---|---|\n| 2 | 約2.33秒 |\n| 3 | 約3.04秒 |\n| 5 | 約5.17秒 |\n| 8 | 8.00秒 |\n| 10 | 約10.13秒 |\n| 15 | 約15.08秒 |\n\n「秒 → H3フレーム数」の数式は変更不要です。')
+      '## 動画の長さ\n\n「動画の長さ（秒・6択）」で2・5・7・10・12・15秒から選択します。\nH3の17k+5フレーム刻みに切り上げるため、指定より少し長くなります。\n\n| 指定秒数 | 実際の長さ（24fps） |\n|---|---|\n| 2 | 約2.33秒 |\n| 7 | 約7.29秒 |\n| 5 | 約5.17秒 |\n| 8 | 8.00秒 |\n| 10 | 約10.13秒 |\n| 12 | 約12.25秒 |\n| 15 | 約15.08秒 |\n\n「秒 → H3フレーム数」の数式は変更不要です。')
     note['size']=[400,920]
     return ui,api
 
@@ -334,6 +334,8 @@ def restart(root,port):
     env=os.environ.copy();env.update(HF_HOME=str(root/'cache/hf'),PYTHONUNBUFFERED='1')
     command=[str(root/'venv/bin/python'),str(root/'ComfyUI/main.py'),'--listen',listen,'--port',str(port),
              '--disable-all-custom-nodes','--disable-auto-launch']
+    if (root/'ComfyUI/custom_nodes/h3_duration_presets/__init__.py').is_file():
+        command += ['--whitelist-custom-nodes','h3_duration_presets']
     log=root/'comfyui.log'
     with log.open('ab',buffering=0) as f:
         process=subprocess.Popen(command,cwd=root/'ComfyUI',env=env,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
@@ -399,6 +401,8 @@ def main():
         downloaded=Path(hf_hub_download(repo_id=MANIFEST['repository'],filename=spec['path'],revision=MANIFEST['revision'],local_dir=COMFY/'models',force_download=path.exists()))
         if not matches(downloaded,spec):raise RuntimeError('Model integrity mismatch: '+spec['path'])
         print('SHA256 OK: '+spec['path'],flush=True)
+    node_dir=COMFY/'custom_nodes/h3_duration_presets';node_dir.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(ROOT/'duration_presets.py',node_dir/'__init__.py')
     write(ROOT)
     from PIL import Image,ImageDraw
     example=COMFY/'input/h3-example.png';example.parent.mkdir(parents=True,exist_ok=True)
@@ -409,6 +413,28 @@ def main():
 if __name__=='__main__':main()
 
 H3_EMBED_SETUP_PY
+
+cat > "$H3_POD_DIR/duration_presets.py" <<'H3_EMBED_DURATION_PRESETS_PY'
+"""Six explicit H3 duration choices; no third-party dependencies."""
+DURATIONS={f'{n} 秒':float(n) for n in (2,5,7,10,12,15)}
+
+class H3DurationPreset:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {'required':{'duration':(list(DURATIONS),{'default':'2 秒'})}}
+    RETURN_TYPES=('FLOAT',)
+    RETURN_NAMES=('seconds',)
+    FUNCTION='select'
+    CATEGORY='H3/settings'
+
+    def select(self,duration):
+        if duration not in DURATIONS:raise ValueError('Choose 2, 5, 7, 10, 12 or 15 seconds')
+        return (DURATIONS[duration],)
+
+NODE_CLASS_MAPPINGS={'H3DurationPreset':H3DurationPreset}
+NODE_DISPLAY_NAME_MAPPINGS={'H3DurationPreset':'動画の長さ（秒・6択）'}
+
+H3_EMBED_DURATION_PRESETS_PY
 
 "$PYTHON" "$H3_POD_DIR/setup.py" "$H3_POD_DIR"
 cat > "$H3_POD_DIR/restart-comfyui.sh" <<'RESTART'
