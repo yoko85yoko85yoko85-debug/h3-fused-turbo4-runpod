@@ -95,3 +95,11 @@ ComfyUIのみのプロセス識別、実行中キュー/PID1/共有サービス�
 配布元:
 - https://github.com/Comfy-Org/ComfyUI
 - https://huggingface.co/Comfy-Org/MiniMax-H3
+
+## 再起動時のポート判定修正
+
+モデル5点の取得後に`Address already in use`となる場合、旧ComfyUI終了直後の
+TIME_WAITソケットを使用中と誤判定した可能性があります。ポート確認にもaiohttpと
+同じ`SO_REUSEADDR`を設定し、短時間の終了待ちを追加しました。実際の待受プロセスが
+残る場合は停止せず、確認用の`ss`コマンドを表示します。モデル再取得は不要で、
+修正版`manage.py`のみ入れ替え、`restart-comfyui.sh`を実行できます。
