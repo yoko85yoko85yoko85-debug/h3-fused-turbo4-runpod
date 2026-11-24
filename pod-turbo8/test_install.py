@@ -1,0 +1,63 @@
+import importlib.util,json,sys,tempfile,unittest,urllib.error
+from pathlib import Path
+from unittest.mock import patch,MagicMock
+sys.path.insert(0,str(Path(__file__).parent))
+import manage,workflow
+
+class Tests(unittest.TestCase):
+    def test_graph(self):
+        ui,api=workflow.build();nodes={n['id']:n for n in ui['nodes']}
+        self.assertEqual(len(nodes),16);self.assertEqual(api['11']['inputs']['steps'],8)
+        self.assertEqual(api['3']['inputs']['clip_name'],workflow.CLIP)
+        for lid,source,out,target,ins,kind in ui['links']:
+            self.assertEqual(nodes[source]['outputs'][out]['type'],kind)
+            self.assertEqual(nodes[target]['inputs'][ins]['link'],lid)
+            self.assertIn(lid,nodes[source]['outputs'][out]['links'])
+        self.assertEqual(api['7']['inputs']['length'],56)
+        self.assertEqual(api['15']['inputs']['audio'],[14,0])
+
+    def test_write_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow.write(tmp)
+            self.assertTrue((Path(tmp)/'ComfyUI/user/default/workflows/H3-Turbo8-I2V.json').exists())
+
+    def test_no_jupyter_matching(self):
+        self.assertFalse(manage.is_comfy(['python','-m','jupyterlab'],'/workspace'))
+        self.assertFalse(manage.is_comfy(['/filebrowser'],'/opt/ComfyUI'))
+        self.assertTrue(manage.is_comfy(['python','main.py','--port','8188'],'/workspace/ComfyUI'))
+        self.assertEqual(manage.port_of(['python','main.py','--port=8190']),8190)
+        self.assertEqual(manage.ancestors(20,{20:([],'.',10),10:([],'.',1)}),{10,20})
+
+    def test_active_queue_no_stop(self):
+        response=MagicMock();response.__enter__.return_value=__import__('io').BytesIO(b'{"queue_running":[1],"queue_pending":[]}')
+        with patch.object(manage,'process_table',return_value={123:(['python','main.py'],'/opt/ComfyUI',1)}),patch.object(manage.urllib.request,'urlopen',return_value=response),patch.object(manage.os,'kill') as kill:
+            with self.assertRaisesRegex(RuntimeError,'running/queued'):manage.restart(Path('/fake'),8188)
+            kill.assert_not_called()
+
+    def test_pid1_never_stop(self):
+        with patch.object(manage,'process_table',return_value={1:(['python','main.py'],'/opt/ComfyUI',0)}),patch.object(manage.os,'kill') as kill:
+            with self.assertRaisesRegex(RuntimeError,'PID1'):manage.restart(Path('/fake'),8188)
+            kill.assert_not_called()
+
+    def test_shared_service_never_stop(self):
+        table={123:(['python','main.py'],'/opt/ComfyUI',100),100:(['bash','start-all.sh'],'/opt',1),124:(['jupyter','lab'],'/workspace',100)}
+        status=MagicMock(stdout='comfyui RUNNING pid 100, uptime 1:00:00')
+        with patch.object(manage,'process_table',return_value=table),patch.object(manage,'check_idle'),patch.object(manage.subprocess,'run',return_value=status) as run,patch.object(manage.os,'kill') as kill:
+            with self.assertRaisesRegex(RuntimeError,'shared/unknown'):manage.restart(Path('/fake'),8188)
+            self.assertEqual(run.call_count,1);kill.assert_not_called()
+
+    def test_manifest(self):
+        m=json.loads((Path(__file__).parent/'models.json').read_text())
+        self.assertEqual(len(m['files']),5)
+        self.assertTrue(all(len(x['sha256'])==64 and x['size']>0 for x in m['files']))
+        files={f['path'].split('/')[-1] for f in m['files']}
+        self.assertEqual(files,{workflow.MODEL,workflow.LORA,workflow.CLIP,workflow.VAE,workflow.AUDIO})
+
+    def test_embedded_python_syntax(self):
+        shell=(Path(__file__).parent/'install.sh').read_text()
+        for marker in ['PREFLIGHT','CHECKGPU','H3_EMBED_WORKFLOW_PY','H3_EMBED_MANAGE_PY','H3_EMBED_SETUP_PY']:
+            content=shell.split("<<'"+marker+"'\n",1)[1].split('\n'+marker+'\n',1)[0]
+            compile(content,'embedded-'+marker,'exec')
+        self.assertIn('export H3_POD_DIR H3_PORT H3_NO_START\npython3',shell)
+
+if __name__=='__main__':unittest.main()
