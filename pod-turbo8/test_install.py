@@ -53,6 +53,25 @@ class Tests(unittest.TestCase):
         _,api=workflow.build_aspect()
         self.assertEqual(api['19']['class_type'],'H3DurationPreset')
 
+    def test_original_controls_and_connections(self):
+        import math
+        ui,api=workflow.build_original_controls();_,base=workflow.build()
+        for key in base:
+            if key!='7':self.assertEqual(api[key],base[key])
+        self.assertEqual(api['17']['inputs'],{'image':[6,0],'upscale_method':'nearest-exact','megapixels':0.4,'resolution_steps':32})
+        self.assertEqual(api['18']['inputs']['image'],[17,0])
+        self.assertEqual(api['7']['inputs']['width'],[18,0])
+        self.assertEqual(api['7']['inputs']['height'],[18,1])
+        self.assertEqual(api['7']['inputs']['first_frame'],[6,0])
+        self.assertEqual(api['19']['inputs']['value'],10.0)
+        self.assertEqual(eval(api['20']['inputs']['expression'],{'__builtins__':{}},{'a':2.34,'round':round,'max':max}),56)
+        self.assertNotIn('H3DurationPreset',{n['class_type'] for n in api.values()})
+        self.assertNotIn('ResolutionSelector',{n['class_type'] for n in api.values()})
+        nodes={n['id']:n for n in ui['nodes']}
+        for lid,source,out,target,slot,kind in ui['links']:
+            self.assertEqual(nodes[source]['outputs'][out]['type'],kind)
+            self.assertEqual(nodes[target]['inputs'][slot]['link'],lid)
+
     def test_write_workflow(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow.write(tmp)
