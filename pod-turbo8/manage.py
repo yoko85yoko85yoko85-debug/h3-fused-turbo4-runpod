@@ -110,6 +110,8 @@ def restart(root,port):
     env=os.environ.copy();env.update(HF_HOME=str(root/'cache/hf'),PYTHONUNBUFFERED='1')
     command=[str(root/'venv/bin/python'),str(root/'ComfyUI/main.py'),'--listen',listen,'--port',str(port),
              '--disable-all-custom-nodes','--disable-auto-launch']
+    if (root/'ComfyUI/custom_nodes/h3_duration_presets/__init__.py').is_file():
+        command += ['--whitelist-custom-nodes','h3_duration_presets']
     log=root/'comfyui.log'
     with log.open('ab',buffering=0) as f:
         process=subprocess.Popen(command,cwd=root/'ComfyUI',env=env,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
