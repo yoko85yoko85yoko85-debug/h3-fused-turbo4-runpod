@@ -4,6 +4,20 @@
 Fused Turbo4ではありません。通常版H3 INT8 + Qwen3-VL32B NVFP4/AWQ + Turbo8 LoRAです。
 既存のServerlessエンドポイントやアプリは変更しません。
 
+## 指定テンプレート対応
+
+`runpod/comfyui:2.4.1-comfyuiv0.44.0-cuda13.2`の実イメージから`/start.sh`を確認しました。
+このテンプレートはパスワード付きプロキシを公開8188番で動かし、ComfyUI本体は
+内部18188番です。スクリプトはこれを検出し、プロキシを残したまま**内部18188番の
+ComfyUIだけ**を入れ替えます。ログインの仕組みは維持します。
+テンプレートの`COMFYUI_PASSWORD`を設定し、通常の初回起動が終わった状態で実行してください。
+
+テンプレートのCUDA13.2用pip制約は専用venvでは継承せず、CUDA13.0の固定版を新規導入します。
+テンプレート既存venvは変更しません。CUDA13.2対応ホストでCUDA13.0版を使う構成です。
+ComfyUI親の`/start.sh`は停止しません。元ComfyUI終了後もJupyter/FileBrowserを保持する
+テンプレートの設計を利用します。指定タグの起動スクリプトは読めましたが、実Podでの
+切り替え操作は未検証です。
+
 ## 前提
 
 - Ubuntu/Debian系、Linux x86_64のGPU Pod。Jupyter Terminalでrootとして実行。
@@ -72,9 +86,11 @@ H3_PORT=8189 bash install.sh
 ## 検証範囲
 
 シェル構文、埋め込みPython構文、16ノードの接続と設定、モデル対応、
-ComfyUIのみのプロセス識別、実行中キュー/PID1/共有サービスを停止しない確認など8件通過。
+ComfyUIのみのプロセス識別、実行中キュー/PID1/共有サービスを停止しない確認などのテスト通過。
 実際のPodでの44GB一式ダウンロード・ComfyUI UI読み込み・GPU生成は未検証。
 自動再起動はテンプレートによって対応できない場合があります。
+
+起動方式の参照: https://github.com/runpod/containers/tree/main/official-templates/comfyui
 
 配布元:
 - https://github.com/Comfy-Org/ComfyUI
