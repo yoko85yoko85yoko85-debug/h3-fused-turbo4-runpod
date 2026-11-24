@@ -46,6 +46,15 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'shared/unknown'):manage.restart(Path('/fake'),8188)
             self.assertEqual(run.call_count,1);kill.assert_not_called()
 
+    def test_template_keeps_password_proxy(self):
+        with patch.object(manage,'is_runpod_template',return_value=True):
+            self.assertEqual(manage.connection_config(8188),(18188,'127.0.0.1',True))
+            self.assertEqual(manage.connection_config(8189),(8189,'0.0.0.0',False))
+        with patch.object(manage.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('http://localhost',401,'Auth',None,None)):
+            manage.check_proxy(8188)
+        with patch.object(manage.urllib.request,'urlopen',return_value=MagicMock()):
+            with self.assertRaisesRegex(RuntimeError,'bypass'):manage.check_proxy(8188)
+
     def test_manifest(self):
         m=json.loads((Path(__file__).parent/'models.json').read_text())
         self.assertEqual(len(m['files']),5)
