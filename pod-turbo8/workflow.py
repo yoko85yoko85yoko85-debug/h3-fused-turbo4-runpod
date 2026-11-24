@@ -72,6 +72,35 @@ def build_aspect():
         'inputs':[],'outputs':[],'properties':{},'widgets_values':['## メガピクセルの目安\n\n**16:9・multiple＝32 の場合**\n\n| megapixels | 出力サイズ |\n|---|---|\n| 0.2 | 608 × 352 |\n| 0.3 | 736 × 416 |\n| 0.4 | 864 × 480 |\n| 0.5 | 960 × 544 |\n| 0.6 | 1056 × 608 |\n| 0.7 | 1152 × 640 |\n| 0.8 | 1216 × 672 |\n| 0.9 | 1280 × 736 |\n| 0.98 | 1344 × 768 |\n\nアスペクト比を変えると、同じMPでも幅・高さは変わります。\n32px刻みで丸めるため、比率と画素数は概算です。\n\n**正方形の例：1:1・0.6MP → 800 × 800**\n\n長さはH3ノードの length で指定します。']})
     ui['last_node_id']=18;ui['last_link_id']=len(ui['links'])
     api['17']={'class_type':'ResolutionSelector','inputs':{'aspect_ratio':'16:9 (Widescreen)','megapixels':0.25,'multiple':32}}
+    expression='max(5, ceil(a * 24)) + (5 - max(5, ceil(a * 24))) % 17'
+    duration={'id':19,'type':'PrimitiveFloat','title':'動画の長さ（秒）',
+       'pos':[740,650],'size':[330,110],'flags':{},'order':0,'mode':0,'inputs':[],
+       'outputs':[{'name':'FLOAT','type':'FLOAT','links':[],'slot_index':0}],
+       'properties':{'Node name for S&R':'PrimitiveFloat'},'widgets_values':[2.0]}
+    convert={'id':20,'type':'ComfyMathExpression','title':'秒 → H3フレーム数（変更不要）',
+       'pos':[1140,650],'size':[380,180],'flags':{},'order':1,'mode':0,
+       'inputs':[{'name':'values.a','type':'FLOAT,INT,BOOLEAN','link':None},
+                 {'name':'values.b','type':'FLOAT,INT,BOOLEAN','shape':7,'link':None}],
+       'outputs':[{'name':'FLOAT','type':'FLOAT','links':[],'slot_index':0},
+                  {'name':'INT','type':'INT','links':[],'slot_index':1},
+                  {'name':'BOOL','type':'BOOLEAN','links':[],'slot_index':2}],
+       'properties':{'Node name for S&R':'ComfyMathExpression'},'widgets_values':[expression]}
+    ui['nodes'].extend([duration,convert])
+    lid=len(ui['links'])+1
+    ui['links'].append([lid,19,0,20,0,'FLOAT'])
+    duration['outputs'][0]['links'].append(lid);convert['inputs'][0]['link']=lid
+    lid=len(ui['links'])+1;target_slot=len(byid[7]['inputs'])
+    ui['links'].append([lid,20,1,7,target_slot,'INT'])
+    convert['outputs'][1]['links'].append(lid)
+    byid[7]['inputs'].append({'name':'length','type':'INT','widget':{'name':'length'},'link':lid})
+    api['19']={'class_type':'PrimitiveFloat','inputs':{'value':2.0}}
+    api['20']={'class_type':'ComfyMathExpression','inputs':{'expression':expression,'values.a':[19,0]}}
+    api['7']['inputs']['length']=[20,1]
+    ui['last_node_id']=20;ui['last_link_id']=len(ui['links'])
+    note=next(n for n in ui['nodes'] if n['id']==18)
+    note['widgets_values'][0]=note['widgets_values'][0].replace('長さはH3ノードの length で指定します。',
+      '## 動画の長さ\n\n「動画の長さ（秒）」に秒数を入力します。まずは1〜15秒で使用してください。\nH3の17k+5フレーム刻みに切り上げるため、指定より少し長くなります。\n\n| 指定秒数 | 実際の長さ（24fps） |\n|---|---|\n| 2 | 約2.33秒 |\n| 3 | 約3.04秒 |\n| 5 | 約5.17秒 |\n| 8 | 8.00秒 |\n| 10 | 約10.13秒 |\n| 15 | 約15.08秒 |\n\n「秒 → H3フレーム数」の数式は変更不要です。')
+    note['size']=[400,920]
     return ui,api
 
 
