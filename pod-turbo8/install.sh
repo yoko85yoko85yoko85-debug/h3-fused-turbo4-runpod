@@ -227,6 +227,22 @@ def check_proxy(public_port):
     raise RuntimeError('Expected the template password proxy on public8188. Refusing to bypass it.')
 
 
+def wait_for_port(listen,port,seconds=15):
+    # Match aiohttp's listener semantics. Without SO_REUSEADDR, TIME_WAIT
+    # connections from the old server can look like a live port owner.
+    deadline=time.monotonic()+seconds
+    while True:
+        with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            try:
+                probe.bind((listen,port))
+                return
+            except OSError:
+                if time.monotonic()>=deadline:
+                    raise RuntimeError('A live listener still occupies port '+str(port)+'. No unrelated service was stopped. Run: ss -ltnp | grep '+str(port)) from None
+        time.sleep(1)
+
+
 def restart(root,port):
     public_port=port;port,listen,preserve_proxy=connection_config(public_port)
     if preserve_proxy:check_proxy(public_port)
@@ -253,9 +269,7 @@ def restart(root,port):
             except ProcessLookupError:break
             time.sleep(1)
     # Refuse to kill a respawned process or an unrelated listener.
-    with socket.socket() as s:
-        try:s.bind((listen,port))
-        except OSError:raise RuntimeError('Port is still occupied. Nothing else was stopped. Check the template ComfyUI service.')
+    wait_for_port(listen,port)
     env=os.environ.copy();env.update(HF_HOME=str(root/'cache/hf'),PYTHONUNBUFFERED='1')
     command=[str(root/'venv/bin/python'),str(root/'ComfyUI/main.py'),'--listen',listen,'--port',str(port),
              '--disable-all-custom-nodes','--disable-auto-launch']
