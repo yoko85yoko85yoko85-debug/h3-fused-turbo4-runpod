@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Original H3 INT8 + Qwen3-VL32B + Turbo8, downloaded from upstream; no custom image.
 set -euo pipefail
+# Template CUDA13.2 pip constraints apply to its own venv, not this isolated one.
+# Only this script's environment is changed; Jupyter and the template are untouched.
+unset PIP_CONSTRAINT PIP_BUILD_CONSTRAINT PIP_EXTRA_INDEX_URL PIP_INDEX_URL PYTHONPATH
 export PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
 H3_POD_DIR="${H3_POD_DIR:-/opt/h3-turbo8}"
 H3_PORT="${H3_PORT:-8188}"
