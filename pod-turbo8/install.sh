@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Original H3 INT8 + Qwen3-VL32B + Turbo8, downloaded from upstream; no custom image.
 set -euo pipefail
+# Template CUDA13.2 pip constraints apply to its own venv, not this isolated one.
+# Only this script's environment is changed; Jupyter and the template are untouched.
+unset PIP_CONSTRAINT PIP_BUILD_CONSTRAINT PIP_EXTRA_INDEX_URL PIP_INDEX_URL PYTHONPATH
 export PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
 H3_POD_DIR="${H3_POD_DIR:-/opt/h3-turbo8}"
 H3_PORT="${H3_PORT:-8188}"
@@ -203,7 +206,30 @@ def check_idle(port):
         raise RuntimeError('ComfyUI has running/queued work; it was NOT stopped. Finish it before retrying.')
 
 
+def is_runpod_template():
+    start=Path('/start.sh')
+    return Path('/opt/comfyui-auth-proxy/auth_proxy.py').is_file() and start.is_file() and 'COMFYUI_INTERNAL_PORT=18188' in start.read_text()
+
+
+def connection_config(public_port):
+    if public_port==8188 and is_runpod_template():return 18188,'127.0.0.1',True
+    return public_port,'0.0.0.0',False
+
+
+def check_proxy(public_port):
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{public_port}/',timeout=5) as r:pass
+    except urllib.error.HTTPError as e:
+        if e.code==401:return
+        raise RuntimeError('Template password proxy is not ready; no service was stopped.')
+    except Exception:
+        raise RuntimeError('Template password proxy is unavailable. Set COMFYUI_PASSWORD in Pod settings and let template startup complete. No service was stopped.')
+    raise RuntimeError('Expected the template password proxy on public8188. Refusing to bypass it.')
+
+
 def restart(root,port):
+    public_port=port;port,listen,preserve_proxy=connection_config(public_port)
+    if preserve_proxy:check_proxy(public_port)
     table=process_table();pids=[pid for pid,(args,cwd,_) in table.items() if is_comfy(args,cwd) and port_of(args)==port]
     if len(pids)>1:raise RuntimeError('Multiple ComfyUI processes on the selected port; no service was stopped.')
     if pids:
@@ -228,10 +254,10 @@ def restart(root,port):
             time.sleep(1)
     # Refuse to kill a respawned process or an unrelated listener.
     with socket.socket() as s:
-        try:s.bind(('0.0.0.0',port))
+        try:s.bind((listen,port))
         except OSError:raise RuntimeError('Port is still occupied. Nothing else was stopped. Check the template ComfyUI service.')
     env=os.environ.copy();env.update(HF_HOME=str(root/'cache/hf'),PYTHONUNBUFFERED='1')
-    command=[str(root/'venv/bin/python'),str(root/'ComfyUI/main.py'),'--listen','0.0.0.0','--port',str(port),
+    command=[str(root/'venv/bin/python'),str(root/'ComfyUI/main.py'),'--listen',listen,'--port',str(port),
              '--disable-all-custom-nodes','--disable-auto-launch']
     log=root/'comfyui.log'
     with log.open('ab',buffering=0) as f:
@@ -251,7 +277,7 @@ def restart(root,port):
                     spec=schema.get('required',{}).get(key) or schema.get('optional',{}).get(key)
                     if spec and isinstance(spec[0],list) and value not in spec[0]:
                         raise RuntimeError('Unavailable model/option: '+str(value))
-            print('READY: ComfyUI on port '+str(port)+'; H3 core nodes and selected model filenames verified. GPU generation remains untested on this Pod.',flush=True)
+            print('READY: ComfyUI on public port '+str(public_port)+'; H3 core nodes and selected model filenames verified. GPU generation remains untested on this Pod.',flush=True)
             return
         except (urllib.error.URLError,TimeoutError,ConnectionError):time.sleep(1)
     raise RuntimeError('ComfyUI did not become ready within 180s; see '+str(log))
